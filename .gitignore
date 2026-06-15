@@ -12,15 +12,15 @@ data/*.parquet
 models/*.joblib
 models/*.pkl
 
-# MLflow
+# MLflow — base de données locale et artefacts
+mlruns.db
+mlruns.db-shm
+mlruns.db-wal
 mlruns/
 mlartifacts/
 
 # Variables d'environnement
 .env
-
-# Docker
-.docker/
 
 # OS
 .DS_Store

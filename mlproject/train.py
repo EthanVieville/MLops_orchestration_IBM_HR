@@ -1,4 +1,4 @@
-"""Entraînement baseline — Logistic Regression."""
+"""Entraînement baseline — Logistic Regression avec tracking MLflow."""
 from __future__ import annotations
 
 import argparse
@@ -7,74 +7,88 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8")
 
 import joblib
+import mlflow
+import mlflow.sklearn
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    roc_auc_score,
-)
 from sklearn.pipeline import Pipeline
 
-from mlproject.config import MODEL_DIR, RANDOM_STATE
+from mlproject.config import MLFLOW, MODEL_DIR, RANDOM_STATE
 from mlproject.data import load_data, split
+from mlproject.evaluation import (
+    compute_metrics,
+    log_classification_report,
+    log_confusion_matrix,
+)
 from mlproject.features import build_preprocessor
 
 
 def train(c: float = 1.0, max_iter: int = 1000) -> dict:
+    # ── MLflow ──────────────────────────────────────────────────────────────
+    # tracking_uri défini dans .env (sqlite:///mlruns.db par défaut)
+    mlflow.set_tracking_uri(MLFLOW.tracking_uri)
+    mlflow.set_experiment(MLFLOW.experiment)
+
     print("=== Chargement des données ===")
     df = load_data()
     X_train, X_test, y_train, y_test = split(df)
     print(f"  Train : {X_train.shape} | Test : {X_test.shape}")
 
-    print("\n=== Entraînement (LogisticRegression) ===")
-    pipeline = Pipeline([
-        ("preprocessor", build_preprocessor()),
-        ("classifier", LogisticRegression(
-            C=c,
-            max_iter=max_iter,
-            class_weight="balanced",
-            random_state=RANDOM_STATE,
-        )),
-    ])
-    pipeline.fit(X_train, y_train)
-    print(f"  C={c}, max_iter={max_iter}, class_weight=balanced")
+    with mlflow.start_run(run_name="baseline-logreg"):
 
-    print("\n=== Métriques ===")
-    y_pred  = pipeline.predict(X_test)
-    y_proba = pipeline.predict_proba(X_test)[:, 1]
+        print("\n=== Entraînement (LogisticRegression) ===")
+        pipeline = Pipeline([
+            ("preprocessor", build_preprocessor()),
+            ("classifier", LogisticRegression(
+                C=c,
+                max_iter=max_iter,
+                class_weight="balanced",  # compense le déséquilibre 84/16
+                random_state=RANDOM_STATE,
+                solver="lbfgs",
+            )),
+        ])
+        pipeline.fit(X_train, y_train)
+        print(f"  C={c}, max_iter={max_iter}, class_weight=balanced")
 
-    f1       = f1_score(y_test, y_pred)
-    f1_w     = f1_score(y_test, y_pred, average="weighted")
-    roc_auc  = roc_auc_score(y_test, y_proba)
-    precision = f1_score(y_test, y_pred, average=None)[1]
-    recall    = f1_score(y_test, y_pred, average=None, labels=[1])[0]
+        mlflow.log_params({
+            "C":            c,
+            "max_iter":     max_iter,
+            "class_weight": "balanced",
+            "solver":       "lbfgs",
+        })
 
-    print(f"  F1 (Yes / class 1)  : {f1:.4f}")
-    print(f"  F1 weighted         : {f1_w:.4f}")
-    print(f"  ROC-AUC             : {roc_auc:.4f}")
-    print(f"  Precision (Yes)     : {precision:.4f}")
-    print(f"  Recall    (Yes)     : {recall:.4f}")
+        print("\n=== Métriques ===")
+        y_pred  = pipeline.predict(X_test)
+        y_proba = pipeline.predict_proba(X_test)[:, 1]
+        metrics = compute_metrics(y_test, y_pred, y_proba)
 
-    print("\n=== Classification Report ===")
-    print(classification_report(y_test, y_pred, target_names=["No (0)", "Yes (1)"]))
+        mlflow.log_metrics({f"test_{k}": v for k, v in metrics.items()})
 
-    print("=== Confusion Matrix ===")
-    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-    print(f"  TN={tn}  FP={fp}")
-    print(f"  FN={fn}   TP={tp}")
+        print(f"  F1 (Yes)      : {metrics['f1']:.4f}")
+        print(f"  F1 weighted   : {metrics['f1_weighted']:.4f}")
+        print(f"  ROC-AUC       : {metrics['roc_auc']:.4f}")
+        print(f"  Precision     : {metrics['precision']:.4f}")
+        print(f"  Recall        : {metrics['recall']:.4f}")
 
-    MODEL_DIR.mkdir(exist_ok=True)
-    model_path = MODEL_DIR / "model.joblib"
-    joblib.dump(pipeline, model_path)
-    print(f"\n[OK] Modèle sauvegardé -> {model_path}")
+        print("\n=== Classification Report ===")
+        log_classification_report(y_test, y_pred)
+        log_confusion_matrix(y_test, y_pred)
 
-    return {"f1": f1, "f1_weighted": f1_w, "roc_auc": roc_auc}
+        mlflow.sklearn.log_model(pipeline, name="model")
+
+        MODEL_DIR.mkdir(exist_ok=True)
+        model_path = MODEL_DIR / "model.joblib"
+        joblib.dump(pipeline, model_path)
+
+        print(f"[OK] Modèle sauvegardé   -> {model_path}")
+        print(f"[OK] Run MLflow          -> {MLFLOW.tracking_uri}")
+        print(f"     Expérience          -> {MLFLOW.experiment}")
+
+    return metrics
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Baseline LogisticRegression — IBM HR Attrition")
-    parser.add_argument("--c",        type=float, default=1.0,   help="Regularisation C (défaut: 1.0)")
-    parser.add_argument("--max-iter", type=int,   default=1000,  help="Iterations max (défaut: 1000)")
+    parser.add_argument("--c",        type=float, default=1.0,  help="Régularisation C (défaut: 1.0)")
+    parser.add_argument("--max-iter", type=int,   default=1000, help="Itérations max (défaut: 1000)")
     args = parser.parse_args()
     train(c=args.c, max_iter=args.max_iter)

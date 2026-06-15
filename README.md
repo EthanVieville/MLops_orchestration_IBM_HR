@@ -37,25 +37,30 @@ make install
 
 ```bash
 make install                            # installe les dépendances
-make train                              # entraîne la baseline (C=1.0, MAX_ITER=1000)
+make train                              # baseline LogisticRegression (C=1.0)
 make train C=0.1                        # avec régularisation plus forte
+make train_models                       # compare 4 modèles via GridSearchCV + MLflow
+make train_models CV=3                  # run rapide (3 folds au lieu de 5)
+make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
 make check_pipeline                     # vérifie le pipeline de données
 make doctor                             # diagnostique l'environnement
-uv run python tests/check_pipeline.py  # check pipeline sans make
 ```
 
 ---
 
-## Résultats baseline (Logistic Regression)
+## Résultats — Comparaison multi-modèles (GridSearchCV, CV=5)
 
-| Métrique | Score |
-|---|---|
-| ROC-AUC | 0.8032 |
-| F1 (Yes) | 0.4511 |
-| F1 weighted | 0.7775 |
-| Recall (Yes) | 0.6383 |
+Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes déséquilibrées)
 
-> Dataset déséquilibré (16% Yes) — `class_weight="balanced"` activé. ROC-AUC solide, F1 sur la classe minoritaire à améliorer avec XGBoost/LightGBM (S6/S7).
+| Modèle | ROC-AUC | F1 (Yes) | Recall | Precision |
+|---|---|---|---|---|
+| **LogisticRegression** | **0.8124** | 0.4885 | 0.6809 | 0.3810 |
+| RandomForest | 0.7955 | 0.4771 | 0.5532 | 0.4194 |
+| LightGBM | 0.7735 | 0.4110 | 0.3191 | 0.5769 |
+| XGBoost | 0.7600 | 0.4421 | 0.4468 | 0.4375 |
+
+> Champion actuel : **LogisticRegression** (C=0.1, class_weight=balanced) — enregistré dans le Model Registry MLflow sous l'alias `@champion`.  
+> Le Recall élevé (0.68) est important en contexte RH : on préfère surveiller un employé qui reste plutôt que de rater un départ.
 
 ---
 
@@ -66,12 +71,14 @@ uv run python tests/check_pipeline.py  # check pipeline sans make
 ├── data/
 │   └── ibm_hr_attrition.csv       # Dataset IBM (non versionné)
 ├── models/
-│   └── model.joblib               # Modèle entraîné (non versionné)
+│   └── model.joblib               # Meilleur modèle (non versionné)
 ├── mlproject/
-│   ├── config.py                  # Configuration centrale (colonnes, paths, MLflow)
+│   ├── config.py                  # DataConfig, MLflowConfig, DeployStage + aliases
 │   ├── data.py                    # Chargement & split 80/20 stratifié
 │   ├── features.py                # Préprocessing (StandardScaler + OneHotEncoder)
-│   └── train.py                   # Baseline Logistic Regression
+│   ├── evaluation.py              # Métriques + artefacts MLflow (confusion matrix, report)
+│   ├── train.py                   # Baseline Logistic Regression + MLflow
+│   └── train_models.py            # GridSearchCV sur 4 modèles + Model Registry
 ├── tests/
 │   └── check_pipeline.py          # Validation du pipeline de données
 ├── .env                           # Variables d'environnement (non versionné)
@@ -87,9 +94,8 @@ uv run python tests/check_pipeline.py  # check pipeline sans make
 | Séance | Objectif | Statut |
 |---|---|---|
 | S0 | Configuration dataset IBM + pipeline de données | ✅ |
-| S5 | Baseline Logistic Regression | ✅ |
-| S6 | Optimisation Optuna | 🔲 |
-| S7 | GridSearchCV + SHAP | 🔲 |
+| S5 | Baseline Logistic Regression + MLflow tracking | ✅ |
+| S6/S7 | Comparaison multi-modèles (GridSearchCV) + MLflow Registry | ✅ |
 | S8 | Dockerfile entraînement | 🔲 |
 | S12 | API FastAPI | 🔲 |
 | S14 | Docker Compose | 🔲 |

@@ -6,8 +6,11 @@
 SHELL    := /bin/sh
 PYTHON   := uv run python
 RUN      := uv run
+
+# Paramètres overridables depuis la ligne de commande (ex: make train C=0.1)
 C        ?= 1.0
 MAX_ITER ?= 1000
+CV       ?= 5
 
 YELLOW := $(shell printf '\033[33m')
 GREEN  := $(shell printf '\033[32m')
@@ -17,7 +20,8 @@ RESET  := $(shell printf '\033[0m')
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-uv check-venv install sync lock reset-env doctor check_pipeline train
+.PHONY: help check-uv check-venv install sync lock reset-env doctor \
+        train train_models check_pipeline mlflow_ui
 
 # ==============================================================================
 # Help
@@ -68,13 +72,26 @@ doctor: check-uv check-venv ## Vérifie l'environnement
 	@echo "$(GREEN)[OK] Environnement prêt$(RESET)"
 
 # ==============================================================================
-# Vérification pipeline
+# Pipeline ML
 # ==============================================================================
+
+check_pipeline: check-venv ## Vérifie que le pipeline de données fonctionne
+	@echo "$(YELLOW)>> Vérification du pipeline...$(RESET)"
+	$(PYTHON) tests/check_pipeline.py
 
 train: check-venv ## Entraîne la baseline LogisticRegression (C=.. MAX_ITER=..)
 	@echo "$(YELLOW)>> Entraînement baseline...$(RESET)"
 	$(PYTHON) -m mlproject.train --c $(C) --max-iter $(MAX_ITER)
 
-check_pipeline: check-venv ## Vérifie que le pipeline de données fonctionne
-	@echo "$(YELLOW)>> Vérification du pipeline...$(RESET)"
-	$(PYTHON) tests/check_pipeline.py
+train_models: check-venv ## Compare 4 modèles via GridSearchCV + MLflow (CV=..)
+	@echo "$(YELLOW)>> Comparaison multi-modèles...$(RESET)"
+	$(PYTHON) -m mlproject.train_models --cv $(CV)
+
+# ==============================================================================
+# MLflow
+# ==============================================================================
+
+mlflow_ui: ## Lance l'interface MLflow sur http://127.0.0.1:5000
+	@echo "$(YELLOW)>> Démarrage MLflow UI...$(RESET)"
+	@echo "   Ouvrir : http://127.0.0.1:5000"
+	$(RUN) mlflow ui --backend-store-uri sqlite:///mlruns.db --host 127.0.0.1 --port 5000
