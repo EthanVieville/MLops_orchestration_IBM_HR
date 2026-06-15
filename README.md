@@ -2,7 +2,7 @@
 
 Pipeline MLOps complet de classification binaire pour prédire si un employé va quitter l'entreprise.
 
-**Auteur** : Ethan Viéville — ESGI Majeure Orchestration ML
+**Auteur** : Ethan Viéville
 
 ---
 
@@ -27,7 +27,7 @@ Anticiper les départs permet aux RH de prioriser les actions de rétention sur 
 
 ---
 
-## Stack technique
+## Stack technique prévue
 
 | Couche | Outil |
 |---|---|
