@@ -15,7 +15,7 @@ RESET  := $(shell printf '\033[0m')
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-uv check-venv install sync lock reset-env doctor check
+.PHONY: help check-uv check-venv install sync lock reset-env doctor check_pipeline
 
 # ==============================================================================
 # Help
@@ -69,6 +69,6 @@ doctor: check-uv check-venv ## Vérifie l'environnement
 # Vérification pipeline
 # ==============================================================================
 
-check: check-venv ## Vérifie que le pipeline de données fonctionne
+check_pipeline: check-venv ## Vérifie que le pipeline de données fonctionne
 	@echo "$(YELLOW)>> Vérification du pipeline...$(RESET)"
 	$(PYTHON) tests/check_pipeline.py

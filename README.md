@@ -36,8 +36,8 @@ make install
 ## Commandes
 
 ```bash
-make check                          # vérifie le pipeline de données
-make doctor                         # diagnostique l'environnement
+make check_pipeline                     # vérifie le pipeline de données
+make doctor                             # diagnostique l'environnement
 uv run python tests/check_pipeline.py  # même chose, sans make
 ```
 
