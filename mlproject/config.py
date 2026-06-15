@@ -11,11 +11,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
 # TODO (S0-1) : chemin vers votre fichier de donnees (CSV) place dans data/
-DATA_PATH = ROOT / "data" / "dataset.csv"
+DATA_PATH = ROOT / "data" / "WA_Fn-UseC_-HR-Employee-Attrition.csv"
 MODEL_DIR = ROOT / "models"
 
 # TODO (S0-2) : nom de la colonne cible binaire (valeurs 0/1)
