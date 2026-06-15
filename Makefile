@@ -3,9 +3,11 @@
 # Environnement géré par uv (Python 3.13) depuis pyproject.toml
 # ==============================================================================
 
-SHELL  := /bin/sh
-PYTHON := uv run python
-RUN    := uv run
+SHELL    := /bin/sh
+PYTHON   := uv run python
+RUN      := uv run
+C        ?= 1.0
+MAX_ITER ?= 1000
 
 YELLOW := $(shell printf '\033[33m')
 GREEN  := $(shell printf '\033[32m')
@@ -15,7 +17,7 @@ RESET  := $(shell printf '\033[0m')
 
 .DEFAULT_GOAL := help
 
-.PHONY: help check-uv check-venv install sync lock reset-env doctor check_pipeline
+.PHONY: help check-uv check-venv install sync lock reset-env doctor check_pipeline train
 
 # ==============================================================================
 # Help
@@ -68,6 +70,10 @@ doctor: check-uv check-venv ## Vérifie l'environnement
 # ==============================================================================
 # Vérification pipeline
 # ==============================================================================
+
+train: check-venv ## Entraîne la baseline LogisticRegression (C=.. MAX_ITER=..)
+	@echo "$(YELLOW)>> Entraînement baseline...$(RESET)"
+	$(PYTHON) -m mlproject.train --c $(C) --max-iter $(MAX_ITER)
 
 check_pipeline: check-venv ## Vérifie que le pipeline de données fonctionne
 	@echo "$(YELLOW)>> Vérification du pipeline...$(RESET)"
