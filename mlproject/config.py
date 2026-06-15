@@ -1,8 +1,7 @@
-"""Configuration centrale du projet de classification.
+"""Configuration centrale du projet — IBM HR Attrition.
 
-C'est le SEUL fichier a adapter pour brancher votre propre jeu de donnees :
-data.py, features.py et les scripts d'entrainement lisent toutes leurs
-colonnes via ces constantes. Voir tp/TP_S0_projet_personnel.md.
+Seul fichier à adapter si le dataset change. Tous les autres modules
+lisent leurs paramètres depuis ces constantes.
 """
 from __future__ import annotations
 
@@ -14,22 +13,63 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 
-# TODO (S0-1) : chemin vers votre fichier de donnees (CSV) place dans data/
-DATA_PATH = ROOT / "data" / "WA_Fn-UseC_-HR-Employee-Attrition.csv"
+# --- Données ---------------------------------------------------------------
+DATA_PATH = ROOT / "data" / "ibm_hr_attrition.csv"
 MODEL_DIR = ROOT / "models"
 
-# TODO (S0-2) : nom de la colonne cible binaire (valeurs 0/1)
-TARGET = "target"
+# Colonne cible : Attrition encodée en 1 (Yes) / 0 (No)
+TARGET = "Attrition"
 
-# TODO (S0-3) : colonnes numeriques de votre dataset
-NUMERIC_FEATURES: list[str] = []
+# Colonnes supprimées au chargement (constantes ou identifiants sans valeur)
+COLUMNS_TO_DROP: list[str] = [
+    "EmployeeCount",   # toujours 1
+    "EmployeeNumber",  # identifiant unique, pas prédictif
+    "Over18",          # toujours "Y"
+    "StandardHours",   # toujours 80
+]
 
-# TODO (S0-4) : colonnes categorielles (peut rester vide : [])
-CATEGORICAL_FEATURES: list[str] = []
+# --- Features numériques ---------------------------------------------------
+NUMERIC_FEATURES: list[str] = [
+    "Age",
+    "DailyRate",
+    "DistanceFromHome",
+    "Education",
+    "EnvironmentSatisfaction",
+    "HourlyRate",
+    "JobInvolvement",
+    "JobLevel",
+    "JobSatisfaction",
+    "MonthlyIncome",
+    "MonthlyRate",
+    "NumCompaniesWorked",
+    "PercentSalaryHike",
+    "PerformanceRating",
+    "RelationshipSatisfaction",
+    "StockOptionLevel",
+    "TotalWorkingYears",
+    "TrainingTimesLastYear",
+    "WorkLifeBalance",
+    "YearsAtCompany",
+    "YearsInCurrentRole",
+    "YearsSinceLastPromotion",
+    "YearsWithCurrManager",
+]
 
+# --- Features catégorielles ------------------------------------------------
+CATEGORICAL_FEATURES: list[str] = [
+    "BusinessTravel",
+    "Department",
+    "EducationField",
+    "Gender",
+    "JobRole",
+    "MaritalStatus",
+    "OverTime",
+]
+
+# --- Divers ----------------------------------------------------------------
 RANDOM_STATE = 42
 
-# Surcouche via variables d'environnement (principe 12-factor)
+# --- MLflow (surcharge possible via .env) ----------------------------------
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5000")
-MLFLOW_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT", "classification-baseline")
-MODEL_NAME = os.getenv("MODEL_NAME", "classifier")
+MLFLOW_EXPERIMENT  = os.getenv("MLFLOW_EXPERIMENT", "ibm-hr-attrition")
+MODEL_NAME         = os.getenv("MODEL_NAME", "attrition-classifier")

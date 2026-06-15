@@ -1,0 +1,36 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Données & modèles (trop lourds pour git)
+data/*.csv
+data/*.parquet
+models/*.joblib
+models/*.pkl
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Variables d'environnement
+.env
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Tests
+.coverage
+htmlcov/
+.pytest_cache/
