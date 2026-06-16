@@ -11,6 +11,9 @@ RUN      := uv run
 C        ?= 1.0
 MAX_ITER ?= 1000
 CV       ?= 5
+MODEL    ?= LightGBM
+N_TRIALS ?= 50
+SOURCE   ?= file
 
 YELLOW := $(shell printf '\033[33m')
 GREEN  := $(shell printf '\033[32m')
@@ -21,7 +24,7 @@ RESET  := $(shell printf '\033[0m')
 .DEFAULT_GOAL := help
 
 .PHONY: help check-uv check-venv install sync lock reset-env doctor \
-        train train_models check_pipeline mlflow_ui
+        train train_models train_optuna evaluate check_pipeline mlflow_ui
 
 # ==============================================================================
 # Help
@@ -83,9 +86,17 @@ train: check-venv ## Entraîne la baseline LogisticRegression (C=.. MAX_ITER=..)
 	@echo "$(YELLOW)>> Entraînement baseline...$(RESET)"
 	$(PYTHON) -m mlproject.train --c $(C) --max-iter $(MAX_ITER)
 
-train_models: check-venv ## Compare 4 modèles via GridSearchCV + MLflow (CV=..)
+train_models: check-venv ## Compare 5 modèles via GridSearchCV + MLflow (CV=..)
 	@echo "$(YELLOW)>> Comparaison multi-modèles...$(RESET)"
 	$(PYTHON) -m mlproject.train_models --cv $(CV)
+
+train_optuna: check-venv ## Optimisation Optuna TPE (MODEL=LightGBM N_TRIALS=50 CV=5)
+	@echo "$(YELLOW)>> Optimisation Optuna ($(MODEL), $(N_TRIALS) trials)...$(RESET)"
+	$(PYTHON) -m mlproject.train_optuna --model $(MODEL) --n-trials $(N_TRIALS) --cv $(CV)
+
+evaluate: check-venv ## Évalue le champion sauvegardé sur le test set (SOURCE=file|registry)
+	@echo "$(YELLOW)>> Évaluation du modèle (source=$(SOURCE))...$(RESET)"
+	$(PYTHON) -m mlproject.evaluate --source $(SOURCE)
 
 # ==============================================================================
 # MLflow

@@ -194,6 +194,7 @@ def run_family(
     3. Log via tracking : params, métriques, artefacts, modèle
     """
     with tracking.start_run(spec.name, nested=True) as run:
+        tracking.log_tags({"optimizer": "gridsearch", "model": spec.name})
 
         pipeline    = Pipeline([("preprocessor", preprocessor), ("classifier", spec.estimator)])
         cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=RANDOM_STATE)
@@ -274,6 +275,7 @@ def train_models(cv: int = 5) -> None:
             "dataset_size":  len(df),
             "attrition_rate": f"{y_train.mean():.2%}",
         })
+        tracking.log_tags({"optimizer": "gridsearch"})
 
         for spec in specs:
             print(f"  >> {spec.name} ...")

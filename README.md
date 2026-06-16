@@ -39,8 +39,12 @@ make install
 make install                            # installe les dépendances
 make train                              # baseline LogisticRegression (C=1.0)
 make train C=0.1                        # avec régularisation plus forte
-make train_models                       # compare 4 modèles via GridSearchCV + MLflow
+make train_models                       # compare 5 modèles via GridSearchCV + MLflow
 make train_models CV=3                  # run rapide (3 folds au lieu de 5)
+make train_optuna                       # optimisation Optuna TPE (LightGBM, 50 trials)
+make train_optuna MODEL=XGBoost N_TRIALS=100   # autre modèle, plus de trials
+make evaluate                           # évalue model.joblib sur le test set
+make evaluate SOURCE=registry           # évalue le @champion MLflow Registry
 make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
 make check_pipeline                     # vérifie le pipeline de données
 make doctor                             # diagnostique l'environnement
@@ -57,10 +61,11 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | **LogisticRegression** | **0.8124** | 0.4885 | 0.6809 | 0.3810 |
 | RandomForest | 0.7955 | 0.4771 | 0.5532 | 0.4194 |
 | LightGBM | 0.7735 | 0.4110 | 0.3191 | 0.5769 |
+| MLP (PyTorch) | 0.7678 | 0.5321 | 0.6170 | 0.4688 |
 | XGBoost | 0.7600 | 0.4421 | 0.4468 | 0.4375 |
 
 > Champion actuel : **LogisticRegression** (C=0.1, class_weight=balanced) — enregistré dans le Model Registry MLflow sous l'alias `@champion`.  
-> Le Recall élevé (0.68) est important en contexte RH : on préfère surveiller un employé qui reste plutôt que de rater un départ.
+> Le MLP PyTorch obtient le meilleur F1 (0.53) et un Recall élevé (0.62) grâce au `pos_weight` interne — bon profil pour le contexte RH où rater un départ coûte cher.
 
 ---
 
@@ -76,9 +81,13 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 │   ├── config.py                  # DataConfig, MLflowConfig, DeployStage + aliases
 │   ├── data.py                    # Chargement & split 80/20 stratifié
 │   ├── features.py                # Préprocessing (StandardScaler + OneHotEncoder)
-│   ├── evaluation.py              # Métriques + artefacts MLflow (confusion matrix, report)
+│   ├── evaluation.py              # Calcul des métriques (f1, roc_auc, precision, recall)
+│   ├── tracking.py                # Interface centralisée MLflow (aucun autre fichier n'importe mlflow)
+│   ├── models.py                  # TorchMLPClassifier — MLP PyTorch compatible sklearn Pipeline
 │   ├── train.py                   # Baseline Logistic Regression + MLflow
-│   └── train_models.py            # GridSearchCV sur 4 modèles + Model Registry
+│   ├── train_models.py            # GridSearchCV sur 5 modèles + Model Registry
+│   ├── train_optuna.py            # Optimisation Optuna TPE + MLflow (un run par trial)
+│   └── evaluate.py                # Évaluation du champion sauvegardé sur le test set
 ├── tests/
 │   └── check_pipeline.py          # Validation du pipeline de données
 ├── .env                           # Variables d'environnement (non versionné)
@@ -96,6 +105,7 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S0 | Configuration dataset IBM + pipeline de données | ✅ |
 | S5 | Baseline Logistic Regression + MLflow tracking | ✅ |
 | S6/S7 | Comparaison multi-modèles (GridSearchCV) + MLflow Registry | ✅ |
+| S7bis | Optimisation Optuna TPE + évaluation standalone | ✅ |
 | S8 | Dockerfile entraînement | 🔲 |
 | S12 | API FastAPI | 🔲 |
 | S14 | Docker Compose | 🔲 |

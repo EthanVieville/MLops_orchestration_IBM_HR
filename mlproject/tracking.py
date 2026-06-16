@@ -69,6 +69,16 @@ def log_params(params: dict) -> None:
     mlflow.log_params(params)
 
 
+def log_tags(tags: dict) -> None:
+    """Log un dictionnaire de tags dans le run actif.
+
+    Les tags permettent de filtrer et regrouper des runs dans l'UI MLflow
+    sans modifier la hiérarchie parent/enfant.
+    Exemple : {"optimizer": "optuna", "model": "LightGBM"}
+    """
+    mlflow.set_tags(tags)
+
+
 def log_metrics(metrics: dict[str, float], prefix: str = "") -> None:
     """Log un dictionnaire de métriques, avec préfixe optionnel.
 
