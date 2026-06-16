@@ -1,5 +1,7 @@
 # Prédiction de l'attrition des employés — IBM HR Analytics
 
+![CI](https://github.com/EthanVIEVILLE/td_orchestrationML_EthanVIEVILLE/actions/workflows/ci.yml/badge.svg)
+
 Pipeline MLOps de classification binaire pour prédire si un employé va quitter l'entreprise.
 
 **Auteur** : VIEVILLE Ethan
@@ -48,6 +50,9 @@ make evaluate SOURCE=registry           # évalue le @champion MLflow Registry
 make api                                # lance l'API FastAPI (http://127.0.0.1:8000/docs)
 make api PORT=8080                      # sur un port personnalisé
 make predict_client                     # envoie 3 requêtes de test à l'API locale
+make test                               # tests unitaires pytest
+make pipeline                           # pipeline complet : data -> train -> evaluate
+make ci                                 # CI locale : ruff + pytest + pipeline
 make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
 make check_pipeline                     # vérifie le pipeline de données
 make doctor                             # diagnostique l'environnement
@@ -95,6 +100,17 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 ├── scripts/
 │   └── predict_client.py          # Client HTTP de test pour l'API
 ├── tests/
+│   ├── conftest.py                # Fixtures pytest + génération dataset synthétique
+│   ├── generate_synthetic_data.py # Génère ibm_hr_attrition.csv synthétique (CI)
+│   ├── check_pipeline.py          # Validation rapide du pipeline de données (standalone)
+│   ├── test_data.py               # Tests chargement et split du dataset
+│   ├── test_features.py           # Tests pipeline de préprocessing
+│   ├── test_evaluation.py         # Tests calcul des métriques
+│   └── test_api.py                # Tests endpoints FastAPI
+├── .github/
+│   └── workflows/
+│       └── ci.yml                 # GitHub Actions : tests unitaires + smoke test pipeline
+├── tests/
 │   └── check_pipeline.py          # Validation du pipeline de données
 ├── .env                           # Variables d'environnement (non versionné)
 ├── .env.example                   # Template .env
@@ -114,6 +130,7 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S7bis | Optimisation Optuna TPE + évaluation standalone | ✅ |
 | S8 | Dockerfile entraînement | 🔲 |
 | S12 | API FastAPI (/predict, /health, /model-info) | ✅ |
+| S15 | Tests pytest + CI GitHub Actions | ✅ |
 | S12 | API FastAPI | 🔲 |
 | S14 | Docker Compose | 🔲 |
 | S14bis | Frontend Streamlit | 🔲 |

@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Variables MLflow pour la CI — expérience dédiée, pas de conflit avec le local
+env:
+  MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+  MLFLOW_EXPERIMENT: ibm-hr-attrition-ci
+  MODEL_NAME: attrition-classifier-ci
+  DEPLOY_STAGE: challenger
+
+jobs:
+  # ── Job 1 : Tests unitaires + qualité du code ─────────────────────────────
+  unit-tests:
+    name: Tests unitaires (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv + Python 3.13
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Installer les dépendances (dev inclus)
+        run: uv sync --extra dev
+
+      - name: Ruff — vérification du style et des imports
+        run: uv run ruff check mlproject/ tests/ scripts/
+
+      - name: Pytest — tests unitaires
+        # conftest.py génère automatiquement le dataset synthétique si absent
+        run: uv run pytest tests/ -v --tb=short
+
+  # ── Job 2 : Smoke test pipeline ML end-to-end ────────────────────────────
+  pipeline-smoke-test:
+    name: Smoke test pipeline ML
+    runs-on: ubuntu-latest
+    needs: unit-tests   # ne tourne que si les tests passent
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv + Python 3.13
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Installer les dépendances
+        run: uv sync
+
+      - name: Générer le dataset synthétique
+        run: uv run python tests/generate_synthetic_data.py
+
+      - name: Vérification du pipeline de données
+        run: uv run python tests/check_pipeline.py
+
+      - name: Entraînement baseline (LogisticRegression, rapide)
+        # max-iter réduit pour la CI — convergence garantie sur 400 lignes
+        run: uv run python -m mlproject.train --max-iter 300
+
+      - name: Évaluation du champion sauvegardé
+        run: uv run python -m mlproject.evaluate
+
+      - name: Démarrer l'API + health check
+        run: |
+          uv run uvicorn mlproject.api:app --host 127.0.0.1 --port 8000 &
+          API_PID=$!
+
+          # Attendre jusqu'à 15 secondes que l'API soit prête
+          for i in $(seq 1 15); do
+            if curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
+              echo "API prête après ${i}s"
+              break
+            fi
+            echo "  Attente... (${i}/15)"
+            sleep 1
+          done
+
+          curl -sf http://127.0.0.1:8000/health     | python3 -m json.tool
+          curl -sf http://127.0.0.1:8000/model-info | python3 -m json.tool
+
+          kill $API_PID
+
+      - name: Client de prédiction (3 requêtes /predict)
+        run: |
+          # Lancer l'API en arrière-plan pour le client
+          uv run uvicorn mlproject.api:app --host 127.0.0.1 --port 8000 &
+          API_PID=$!
+          sleep 3
+          uv run python scripts/predict_client.py
+          kill $API_PID

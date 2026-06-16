@@ -26,7 +26,7 @@ RESET  := $(shell printf '\033[0m')
 
 .PHONY: help check-uv check-venv install sync lock reset-env doctor \
         train train_models train_optuna evaluate check_pipeline mlflow_ui \
-        api predict_client
+        api predict_client pipeline ci test docs-serve docs-build
 
 # ==============================================================================
 # Help
@@ -101,6 +101,29 @@ evaluate: check-venv ## Évalue le champion sauvegardé sur le test set (SOURCE=
 	$(PYTHON) -m mlproject.evaluate --source $(SOURCE)
 
 # ==============================================================================
+# Tests & CI
+# ==============================================================================
+
+test: check-venv ## Exécute les tests pytest
+	@echo "$(YELLOW)>> Tests unitaires...$(RESET)"
+	$(RUN) pytest tests/ -v --tb=short
+
+pipeline: check-venv ## Pipeline complet : données -> train baseline -> évaluation
+	@echo "$(YELLOW)>> Pipeline complet...$(RESET)"
+	$(PYTHON) tests/generate_synthetic_data.py
+	$(PYTHON) tests/check_pipeline.py
+	$(PYTHON) -m mlproject.train --max-iter 300
+	$(PYTHON) -m mlproject.evaluate
+	@echo "$(GREEN)[OK] Pipeline complet$(RESET)"
+
+ci: check-venv ## CI locale : tests + pipeline complet (équivalent GitHub Actions)
+	@echo "$(YELLOW)>> CI locale (tests + pipeline)...$(RESET)"
+	$(RUN) ruff check mlproject/ tests/ scripts/
+	$(RUN) pytest tests/ -v --tb=short
+	$(MAKE) pipeline
+	@echo "$(GREEN)[OK] CI locale réussie$(RESET)"
+
+# ==============================================================================
 # API
 # ==============================================================================
 
@@ -113,6 +136,19 @@ api: check-venv ## Lance l'API FastAPI en mode dev (PORT=8000)
 predict_client: check-venv ## Envoie des requêtes de test à l'API locale (PORT=8000)
 	@echo "$(YELLOW)>> Test client -> http://127.0.0.1:$(PORT)$(RESET)"
 	$(PYTHON) scripts/predict_client.py --url http://127.0.0.1:$(PORT)
+
+# ==============================================================================
+# MLflow
+# ==============================================================================
+
+docs-serve: check-venv ## Sert la documentation en local sur http://127.0.0.1:8001
+	@echo "$(YELLOW)>> Documentation -> http://127.0.0.1:8001$(RESET)"
+	$(RUN) mkdocs serve --dev-addr 127.0.0.1:8001
+
+docs-build: check-venv ## Génère la documentation statique dans site/
+	@echo "$(YELLOW)>> Build de la documentation...$(RESET)"
+	$(RUN) mkdocs build
+	@echo "$(GREEN)[OK] Documentation générée dans site/$(RESET)"
 
 # ==============================================================================
 # MLflow

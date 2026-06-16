@@ -11,7 +11,7 @@ def check():
     df = load_data()
     print(f"  Shape            : {df.shape}")
     print(f"  Colonnes         : {list(df.columns)}")
-    print(f"  Target (Attrition):")
+    print("  Target (Attrition):")
     for val, count in df["Attrition"].value_counts().items():
         label = "Yes (1)" if val == 1 else "No  (0)"
         pct = count / len(df) * 100

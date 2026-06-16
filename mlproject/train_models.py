@@ -296,7 +296,7 @@ def train_models(cv: int = 5) -> None:
     # ── Sélection du champion ────────────────────────────────────────────────
     best = max(results, key=lambda r: r.test_metrics["roc_auc"])
 
-    print(f"\n=== Comparatif final (trié par ROC-AUC test) ===")
+    print("\n=== Comparatif final (trié par ROC-AUC test) ===")
     print(f"  {'Modèle':<22} {'ROC-AUC':>10} {'F1':>8} {'Recall':>8} {'Precision':>10}")
     print(f"  {'-'*62}")
     for r in sorted(results, key=lambda r: r.test_metrics["roc_auc"], reverse=True):
@@ -316,7 +316,7 @@ def train_models(cv: int = 5) -> None:
     print(f"\n[OK] Champion sauvegardé -> {MODEL_DIR / 'model.joblib'}")
 
     tracking.register_champion(best.run_id)
-    print(f"[OK] MLflow UI          -> make mlflow_ui")
+    print("[OK] MLflow UI          -> make mlflow_ui")
 
 
 if __name__ == "__main__":

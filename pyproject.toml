@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov", "ruff", "mypy"]
+dev = ["pytest>=8.0", "pytest-cov", "ruff", "mypy", "mkdocs>=1.5", "mkdocs-material>=9.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -41,6 +41,10 @@ packages = ["mlproject"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+
+[tool.ruff.lint]
+# E402 : imports après sys.stdout.reconfigure() — workaround Windows UTF-8 légitime
+ignore = ["E402"]
 
 [tool.mypy]
 python_version = "3.13"

@@ -1,0 +1,55 @@
+site_name: IBM HR Attrition — MLOps
+site_description: Pipeline MLOps de prédiction d'attrition employé — ESGI
+site_author: Ethan Viéville
+docs_dir: docs
+
+theme:
+  name: material
+  language: fr
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Passer en mode sombre
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Passer en mode clair
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.integrate
+    - content.code.annotate
+    - content.code.copy
+    - search.highlight
+
+nav:
+  - Accueil: index.md
+  - Installation: setup.md
+  - Pipeline ML:
+      - Données & Features: pipeline/data.md
+      - Entraînement: pipeline/training.md
+      - MLflow: pipeline/mlflow.md
+  - API FastAPI: api.md
+  - Tests & CI/CD: testing.md
+  - Référence Makefile: commands.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.inlinehilite

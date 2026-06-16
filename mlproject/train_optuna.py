@@ -206,7 +206,7 @@ def train_optuna(model_name: str = "LightGBM", n_trials: int = 50, cv: int = 5) 
     preprocessor     = build_preprocessor()
     run_name         = f"optuna_{model_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    print(f"\n=== Optimisation Optuna ===")
+    print("\n=== Optimisation Optuna ===")
     print(f"  Modèle   : {model_name}")
     print(f"  Trials   : {n_trials}  |  CV folds : {cv}")
     print(f"  Run parent MLflow : {run_name}\n")
@@ -255,7 +255,7 @@ def train_optuna(model_name: str = "LightGBM", n_trials: int = 50, cv: int = 5) 
         tracking.log_params(loggable_best)
 
         # ── Refit sur tout X_train avec les meilleurs hyperparamètres ────────
-        print(f"\n=== Refit sur X_train complet ===")
+        print("\n=== Refit sur X_train complet ===")
         best_estimator = _build_estimator(model_name, best_params, scale_pos_weight)
         best_pipeline  = Pipeline([("preprocessor", preprocessor), ("classifier", best_estimator)])
         best_pipeline.fit(X_train, y_train)
@@ -269,7 +269,7 @@ def train_optuna(model_name: str = "LightGBM", n_trials: int = 50, cv: int = 5) 
         tracking.log_classification_report(y_test, y_pred)
         tracking.log_model(best_pipeline)
 
-        print(f"\n=== Métriques test set ===")
+        print("\n=== Métriques test set ===")
         print(f"  ROC-AUC   : {metrics['roc_auc']:.4f}")
         print(f"  F1 (Yes)  : {metrics['f1']:.4f}")
         print(f"  Recall    : {metrics['recall']:.4f}")
@@ -280,7 +280,7 @@ def train_optuna(model_name: str = "LightGBM", n_trials: int = 50, cv: int = 5) 
         print(f"\n[OK] Modèle sauvegardé   -> {MODEL_DIR / 'model.joblib'}")
 
         tracking.register_champion(parent_run.info.run_id)
-        print(f"[OK] MLflow UI           -> make mlflow_ui")
+        print("[OK] MLflow UI           -> make mlflow_ui")
 
 
 if __name__ == "__main__":

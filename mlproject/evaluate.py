@@ -70,13 +70,13 @@ def evaluate(source: str = "file") -> None:
         tracking.log_classification_report(y_test, y_pred)
         run_id = run.info.run_id
 
-    print(f"\n=== Métriques (test set) ===")
+    print("\n=== Métriques (test set) ===")
     print(f"  ROC-AUC   : {metrics['roc_auc']:.4f}")
     print(f"  F1 (Yes)  : {metrics['f1']:.4f}")
     print(f"  Recall    : {metrics['recall']:.4f}")
     print(f"  Precision : {metrics['precision']:.4f}")
     print(f"\n[OK] Run MLflow -> {run_id}")
-    print(f"[OK] MLflow UI  -> make mlflow_ui")
+    print("[OK] MLflow UI  -> make mlflow_ui")
 
 
 if __name__ == "__main__":
