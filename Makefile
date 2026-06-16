@@ -14,6 +14,7 @@ CV       ?= 5
 MODEL    ?= LightGBM
 N_TRIALS ?= 50
 SOURCE   ?= file
+PORT     ?= 8000
 
 YELLOW := $(shell printf '\033[33m')
 GREEN  := $(shell printf '\033[32m')
@@ -24,7 +25,8 @@ RESET  := $(shell printf '\033[0m')
 .DEFAULT_GOAL := help
 
 .PHONY: help check-uv check-venv install sync lock reset-env doctor \
-        train train_models train_optuna evaluate check_pipeline mlflow_ui
+        train train_models train_optuna evaluate check_pipeline mlflow_ui \
+        api predict_client
 
 # ==============================================================================
 # Help
@@ -97,6 +99,20 @@ train_optuna: check-venv ## Optimisation Optuna TPE (MODEL=LightGBM N_TRIALS=50 
 evaluate: check-venv ## Évalue le champion sauvegardé sur le test set (SOURCE=file|registry)
 	@echo "$(YELLOW)>> Évaluation du modèle (source=$(SOURCE))...$(RESET)"
 	$(PYTHON) -m mlproject.evaluate --source $(SOURCE)
+
+# ==============================================================================
+# API
+# ==============================================================================
+
+api: check-venv ## Lance l'API FastAPI en mode dev (PORT=8000)
+	@echo "$(YELLOW)>> Démarrage de l'API FastAPI...$(RESET)"
+	@echo "   Docs  : http://127.0.0.1:$(PORT)/docs"
+	@echo "   Santé : http://127.0.0.1:$(PORT)/health"
+	$(RUN) uvicorn mlproject.api:app --reload --host 127.0.0.1 --port $(PORT)
+
+predict_client: check-venv ## Envoie des requêtes de test à l'API locale (PORT=8000)
+	@echo "$(YELLOW)>> Test client -> http://127.0.0.1:$(PORT)$(RESET)"
+	$(PYTHON) scripts/predict_client.py --url http://127.0.0.1:$(PORT)
 
 # ==============================================================================
 # MLflow

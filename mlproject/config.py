@@ -97,3 +97,4 @@ RANDOM_STATE         = DATA.random_state
 MLFLOW_TRACKING_URI  = MLFLOW.tracking_uri
 MLFLOW_EXPERIMENT    = MLFLOW.experiment
 MODEL_NAME           = MLFLOW.model_name
+API_URL              = os.getenv("API_URL", "http://127.0.0.1:8000")

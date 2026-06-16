@@ -45,6 +45,9 @@ make train_optuna                       # optimisation Optuna TPE (LightGBM, 50 
 make train_optuna MODEL=XGBoost N_TRIALS=100   # autre modèle, plus de trials
 make evaluate                           # évalue model.joblib sur le test set
 make evaluate SOURCE=registry           # évalue le @champion MLflow Registry
+make api                                # lance l'API FastAPI (http://127.0.0.1:8000/docs)
+make api PORT=8080                      # sur un port personnalisé
+make predict_client                     # envoie 3 requêtes de test à l'API locale
 make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
 make check_pipeline                     # vérifie le pipeline de données
 make doctor                             # diagnostique l'environnement
@@ -87,7 +90,10 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 │   ├── train.py                   # Baseline Logistic Regression + MLflow
 │   ├── train_models.py            # GridSearchCV sur 5 modèles + Model Registry
 │   ├── train_optuna.py            # Optimisation Optuna TPE + MLflow (un run par trial)
-│   └── evaluate.py                # Évaluation du champion sauvegardé sur le test set
+│   ├── evaluate.py                # Évaluation du champion sauvegardé sur le test set
+│   └── api.py                     # API FastAPI : /health, /predict, /model-info
+├── scripts/
+│   └── predict_client.py          # Client HTTP de test pour l'API
 ├── tests/
 │   └── check_pipeline.py          # Validation du pipeline de données
 ├── .env                           # Variables d'environnement (non versionné)
@@ -107,6 +113,7 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S6/S7 | Comparaison multi-modèles (GridSearchCV) + MLflow Registry | ✅ |
 | S7bis | Optimisation Optuna TPE + évaluation standalone | ✅ |
 | S8 | Dockerfile entraînement | 🔲 |
+| S12 | API FastAPI (/predict, /health, /model-info) | ✅ |
 | S12 | API FastAPI | 🔲 |
 | S14 | Docker Compose | 🔲 |
 | S14bis | Frontend Streamlit | 🔲 |
