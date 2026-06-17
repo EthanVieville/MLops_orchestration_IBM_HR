@@ -1,0 +1,38 @@
+FROM python:3.13-slim
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dépendances ML sans torch (installé séparément en version CPU-only)
+COPY docker/requirements-train.txt .
+RUN pip install --no-cache-dir -r requirements-train.txt
+
+# torch CPU-only : ~700 Mo au lieu de ~2.5 Go pour la version CUDA par défaut.
+# Nécessaire pour TorchMLPClassifier dans train_models.py.
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch
+
+# Code source du projet
+COPY mlproject/ mlproject/
+
+# generate_synthetic_data.py doit rester dans tests/ :
+# il utilise parents[1] pour remonter à la racine (/app), ce qui donne
+# DATA_PATH = /app/data/ibm_hr_attrition.csv.
+COPY tests/generate_synthetic_data.py tests/generate_synthetic_data.py
+COPY docker/train-entrypoint.sh /app/train-entrypoint.sh
+RUN chmod +x /app/train-entrypoint.sh
+
+# Répertoires de données, modèles et tracking MLflow
+RUN mkdir -p /app/data /app/models /app/mlruns
+
+ENV PYTHONPATH="/app" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TRAIN_MODE=baseline
+
+CMD ["/app/train-entrypoint.sh"]

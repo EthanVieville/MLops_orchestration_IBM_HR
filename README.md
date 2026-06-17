@@ -105,6 +105,54 @@ docker run --rm \
 
 ---
 
+## Pipeline complète avec Docker Compose
+
+`docker compose up` exécute la **pipeline de bout en bout** : données → entraînement → prédiction.
+
+```
+trainer  ──► (écrit model.joblib)
+                     │
+                     ▼
+api      ──► http://127.0.0.1:8000
+```
+
+### Commandes
+
+```bash
+# Pipeline standard (entraînement + API)
+make compose-up
+
+# Pipeline + interface MLflow sur http://127.0.0.1:5000
+make compose-monitoring
+
+# Arrêter (les volumes model_vol et mlruns_vol sont conservés)
+make compose-down
+
+# Repartir de zéro (supprime aussi les volumes)
+make compose-clean
+
+# Voir les logs en direct
+make compose-logs
+```
+
+### Ce qui se passe step by step
+
+1. **`trainer`** démarre : génère 400 lignes synthétiques si `data/` est vide, puis lance `train_models.py --cv 3` (GridSearchCV sur LR, RF, XGBoost, LightGBM, MLP). Écrit `model.joblib` dans le volume partagé et s'arrête.
+2. **`api`** démarre dès que `trainer` se termine avec succès (`service_completed_successfully`) : charge `model.joblib` et sert les prédictions sur `:8000`.
+3. (optionnel) **`mlflow-ui`** expose l'interface MLflow sur `:5000` avec toutes les métriques des runs.
+
+> Si tu as le vrai CSV IBM HR dans `data/`, il est monté automatiquement — sinon le dataset synthétique (400 lignes) est généré.
+
+### Architecture des services
+
+| Service | Image | Rôle | Port |
+|---|---|---|---|
+| `trainer` | `docker/Dockerfile.trainer` | GridSearchCV 5 modèles → sauvegarde champion | — |
+| `api` | `docker/Dockerfile.api` | FastAPI inference `/predict` | 8000 |
+| `mlflow-ui` | `python:3.13-slim` + mlflow | Visualisation des runs | 5000 |
+
+---
+
 ## Résultats — Comparaison multi-modèles (GridSearchCV, CV=5)
 
 Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes déséquilibrées)
@@ -131,7 +179,11 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 ├── models/
 │   └── model.joblib               # Meilleur modèle (non versionné)
 ├── docker/
-│   └── Dockerfile.api             # Image Docker de l'API FastAPI (multi-stage)
+│   ├── Dockerfile.api             # Image Docker de l'API FastAPI (slim, ~500 Mo)
+│   ├── Dockerfile.trainer         # Image Docker pour l'entraînement (torch CPU, ~2 Go)
+│   ├── requirements-api.txt       # Dépendances minimales de serving
+│   └── requirements-train.txt     # Dépendances d'entraînement (ML stack)
+├── docker-compose.yml             # Pipeline complète : trainer → api (+ mlflow-ui optionnel)
 ├── mlproject/
 │   ├── config.py                  # DataConfig, MLflowConfig, DeployStage + aliases
 │   ├── data.py                    # Chargement & split 80/20 stratifié
@@ -178,6 +230,6 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S12 | API FastAPI (/predict, /health, /model-info) | ✅ |
 | S15 | Tests pytest (25 tests) + CI GitHub Actions | ✅ |
 | S19 | Dockerfile API (multi-stage) + CD GitHub Actions → GHCR | ✅ |
-| S14 | Docker Compose | 🔲 |
+| S14 | Docker Compose (trainer + api + mlflow-ui) — pipeline from scratch | ✅ |
 | S14bis | Frontend Streamlit | 🔲 |
 | S17 | DAG Airflow | 🔲 |

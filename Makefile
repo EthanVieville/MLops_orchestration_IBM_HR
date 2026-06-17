@@ -30,7 +30,8 @@ RESET  := $(shell printf '\033[0m')
 .PHONY: help check-uv check-venv install sync lock reset-env doctor \
         train train_models train_optuna evaluate check_pipeline mlflow_ui \
         api predict_client pipeline ci test docs-serve docs-build \
-        docker-build docker-run docker-push
+        docker-build docker-run docker-push \
+        compose-up compose-full compose-optuna compose-down compose-clean compose-monitoring compose-logs
 
 # ==============================================================================
 # Help
@@ -181,6 +182,43 @@ docker-push: ## Pousse l'image sur le registre (IMAGE=ghcr.io/<owner>/mlproject-
 	@echo "$(YELLOW)>> Push de $(IMAGE):$(TAG)...$(RESET)"
 	docker push $(IMAGE):$(TAG)
 	@echo "$(GREEN)[OK] Image publiée$(RESET)"
+
+# ==============================================================================
+# Docker Compose — pipeline complète
+# ==============================================================================
+
+compose-up: ## Pipeline baseline : LogisticRegression (~30s) → API
+	@echo "$(YELLOW)>> Pipeline Docker Compose — mode baseline$(RESET)"
+	@echo "   API disponible sur : http://127.0.0.1:8000/docs"
+	TRAIN_MODE=baseline docker compose up --build
+
+compose-full: ## Pipeline GridSearchCV : 5 modèles CV=2 (~10 min) → API
+	@echo "$(YELLOW)>> Pipeline Docker Compose — mode full (GridSearchCV)$(RESET)"
+	@echo "   API disponible sur : http://127.0.0.1:8000/docs"
+	TRAIN_MODE=full docker compose up --build
+
+compose-optuna: ## Pipeline Optuna : LightGBM 20 trials (~5 min) → API
+	@echo "$(YELLOW)>> Pipeline Docker Compose — mode optuna$(RESET)"
+	@echo "   API disponible sur : http://127.0.0.1:8000/docs"
+	TRAIN_MODE=optuna docker compose up --build
+
+compose-down: ## Arrête les conteneurs (conserve les volumes model_vol / mlruns_vol)
+	@echo "$(YELLOW)>> Arrêt des conteneurs...$(RESET)"
+	docker compose down
+
+compose-clean: ## Arrête et supprime conteneurs + volumes (repart from scratch)
+	@echo "$(YELLOW)>> Nettoyage complet (conteneurs + volumes)...$(RESET)"
+	docker compose down -v
+	@echo "$(GREEN)[OK] Environnement Docker réinitialisé$(RESET)"
+
+compose-monitoring: ## Pipeline + MLflow UI sur http://127.0.0.1:5000
+	@echo "$(YELLOW)>> Pipeline + MLflow UI...$(RESET)"
+	@echo "   MLflow UI : http://127.0.0.1:5000"
+	@echo "   API       : http://127.0.0.1:8000/docs"
+	docker compose --profile monitoring up --build
+
+compose-logs: ## Affiche les logs en temps réel
+	docker compose logs -f
 
 # ==============================================================================
 # MLflow

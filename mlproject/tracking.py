@@ -99,13 +99,23 @@ def log_metrics(metrics: dict[str, float], prefix: str = "") -> None:
         print(f"[WARN] Métriques NaN/Inf ignorées : {set(metrics) - set(valid)}")
 
 
+# Types de classifieurs non-sklearn qui utilisent skops pour la sérialisation.
+# MLflow >= 2.13 exige de les déclarer explicitement lors du log_model.
+_SKOPS_TRUSTED = [
+    "xgboost.core.Booster",
+    "xgboost.sklearn.XGBClassifier",
+    "lightgbm.sklearn.LGBMClassifier",
+    "lightgbm.basic.Booster",
+]
+
+
 def log_model(pipeline, name: str = "model") -> None:
     """Log un pipeline scikit-learn comme artefact MLflow.
 
     Le modèle est rechargeable via :
         mlflow.sklearn.load_model(f"runs:/{run_id}/{name}")
     """
-    mlflow.sklearn.log_model(pipeline, name=name)
+    mlflow.sklearn.log_model(pipeline, name=name, skops_trusted_types=_SKOPS_TRUSTED)
 
 
 def log_confusion_matrix(y_true, y_pred) -> None:

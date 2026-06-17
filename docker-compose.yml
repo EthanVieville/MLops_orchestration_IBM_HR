@@ -1,0 +1,85 @@
+name: ibm-hr-attrition
+
+# Pipeline MLOps complète — de l'entraînement à la prédiction.
+#
+# Flux d'exécution :
+#   trainer → (produit model.joblib) → api → (sert les prédictions)
+#
+# Lancement :
+#   docker compose up --build          # pipeline standard
+#   docker compose --profile monitoring up --build   # + MLflow UI sur :5000
+#
+# Volumes partagés :
+#   model_vol  : model.joblib écrit par trainer, lu par api
+#   mlruns_vol : base SQLite MLflow + artefacts
+
+services:
+
+  # ── Entraînement ─────────────────────────────────────────────────────────────
+  trainer:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.trainer
+    volumes:
+      - model_vol:/app/models          # écrit model.joblib ici
+      - mlruns_vol:/app/mlruns         # tracking MLflow persistant
+      - ./data:/app/data               # données réelles si disponibles, sinon synthétiques
+    environment:
+      MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
+      MLFLOW_EXPERIMENT: ibm-hr-attrition
+      MODEL_NAME: attrition-classifier
+      DEPLOY_STAGE: champion
+      GIT_PYTHON_REFRESH: quiet
+      # TRAIN_MODE contrôle le script d'entraînement (voir docker/train-entrypoint.sh) :
+      #   baseline → LogisticRegression ~30s   (make compose-up)
+      #   full     → GridSearchCV 5 modèles    (make compose-full)
+      #   optuna   → Optuna LightGBM 20 trials (make compose-optuna)
+      TRAIN_MODE: ${TRAIN_MODE:-baseline}
+    restart: "no"   # le service s'arrête après l'entraînement (exit 0 = succès)
+
+  # ── API d'inférence ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - model_vol:/app/models:ro       # lecture seule — ne modifie pas le modèle
+    environment:
+      MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
+      MODEL_NAME: attrition-classifier
+    depends_on:
+      trainer:
+        condition: service_completed_successfully   # attend que l'entraînement réussisse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # ── MLflow UI (optionnel) ─────────────────────────────────────────────────────
+  # Lancé uniquement avec : docker compose --profile monitoring up
+  mlflow-ui:
+    image: python:3.13-slim
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlruns_vol:/app/mlruns
+    command: >
+      sh -c "pip install --quiet --no-cache-dir mlflow-skinny &&
+             mlflow server
+             --host 0.0.0.0
+             --port 5000
+             --backend-store-uri sqlite:////app/mlruns/mlruns.db
+             --default-artifact-root /app/mlruns/artifacts"
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+volumes:
+  model_vol:    # modèle entraîné partagé entre trainer et api
+  mlruns_vol:   # données MLflow (runs, métriques, artefacts)

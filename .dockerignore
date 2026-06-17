@@ -16,8 +16,9 @@ mlruns/
 models/
 data/
 
-# Développement & tests
+# Tests (sauf le générateur de données utilisé par Dockerfile.trainer)
 tests/
+!tests/generate_synthetic_data.py
 scripts/
 docs/
 site/
