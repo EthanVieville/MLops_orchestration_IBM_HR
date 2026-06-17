@@ -1,28 +1,18 @@
-# ── Stage 1 : Builder ────────────────────────────────────────────────────────
-# Installe les dépendances dans un venv isolé.
-# On copie pyproject.toml + uv.lock AVANT le code source pour profiter
-# du cache Docker : tant que les deps ne changent pas, cette couche est réutilisée.
-FROM python:3.13-slim AS builder
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-WORKDIR /app
-
-COPY pyproject.toml uv.lock ./
-
-# --frozen         : respecte exactement uv.lock (reproductible)
-# --no-dev         : exclut pytest, ruff, mkdocs, etc.
-# --no-install-project : n'installe pas mlops-churn comme package (on copie
-#                        les sources directement dans le stage runtime)
-RUN uv sync --frozen --no-dev --no-install-project
-
-# ── Stage 2 : Runtime ────────────────────────────────────────────────────────
 FROM python:3.13-slim
 
+# Applique les correctifs de sécurité disponibles dans les paquets OS Debian.
+# Sans cette étape, les CVE connues au moment du pull de l'image de base restent présentes.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Virtualenv construit par le builder
-COPY --from=builder /app/.venv /app/.venv
+# requirements-api.txt = dépendances de serving uniquement (pas torch, mlflow, optuna...)
+# On installe avant de copier le code source pour profiter du cache Docker :
+# si les deps ne changent pas, cette couche n'est pas reconstruite.
+COPY docker/requirements-api.txt .
+RUN pip install --no-cache-dir -r requirements-api.txt
 
 # Code source de l'API uniquement
 COPY mlproject/ mlproject/
@@ -30,10 +20,14 @@ COPY mlproject/ mlproject/
 # Répertoire pour le modèle (monté en volume au runtime ou via Docker Compose)
 RUN mkdir -p /app/models
 
-ENV PATH="/app/.venv/bin:$PATH" \
-    # PYTHONPATH garantit que `import mlproject` trouve /app/mlproject/
-    # et que config.py calcule ROOT = /app (parents[1] de /app/mlproject/config.py)
-    PYTHONPATH="/app" \
+# Principe du moindre privilège : l'API tourne en utilisateur non-root.
+RUN useradd --no-create-home --shell /bin/false appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# PYTHONPATH garantit que `import mlproject` trouve /app/mlproject/
+# et que config.py calcule ROOT = /app (parents[1] de /app/mlproject/config.py)
+ENV PYTHONPATH="/app" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -44,5 +38,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" \
     || exit 1
 
-# 1 worker suffit pour l'inférence synchrone sklearn ; augmenter si charge élevée
 CMD ["uvicorn", "mlproject.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
