@@ -277,6 +277,20 @@ def train_optuna(model_name: str = "LightGBM", n_trials: int = 50, cv: int = 5) 
 
         MODEL_DIR.mkdir(exist_ok=True)
         joblib.dump(best_pipeline, MODEL_DIR / "model.joblib")
+        from mlproject.model_registry import save_model_snapshot
+        key_items  = list(best_params.items())[:2]
+        params_str = ", ".join(
+            f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+            for k, v in key_items
+        )
+        save_model_snapshot(
+            best_pipeline,
+            label=f"{model_name} optuna ({params_str})",
+            params={k: str(v) for k, v in best_params.items()},
+            metrics=metrics,
+            run_id=parent_run.info.run_id,
+            save_as_champion=True,
+        )
         print(f"\n[OK] Modèle sauvegardé   -> {MODEL_DIR / 'model.joblib'}")
 
         tracking.register_champion(parent_run.info.run_id)

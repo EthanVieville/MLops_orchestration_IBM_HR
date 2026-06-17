@@ -17,6 +17,7 @@ Documentation interactive :
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -48,6 +49,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         ml["model"]      = pipeline
         ml["model_type"] = type(pipeline.steps[-1][1]).__name__
         ml["model_path"] = str(model_path)
+        meta_path = MODEL_DIR / "model.meta.json"
+        if meta_path.exists():
+            ml["model_meta"] = json.loads(meta_path.read_text(encoding="utf-8"))
         logger.info("Modèle chargé : %s depuis %s", ml["model_type"], model_path)
     yield
     ml.clear()
@@ -216,20 +220,86 @@ def health() -> dict:
     summary="Informations sur le modèle déployé",
 )
 def model_info() -> dict:
-    """Retourne les métadonnées du modèle actuellement en mémoire.
-
-    - **loaded** : indique si le modèle est bien chargé
-    - **model_type** : classe sklearn du dernier estimateur (ex. `LogisticRegression`)
-    - **model_name** : nom dans le MLflow Model Registry
-    - **version** : valeur de la variable d'environnement `MODEL_VERSION`
-    """
+    """Retourne les métadonnées enrichies du modèle actuellement en mémoire."""
     loaded = ml.get("model") is not None
+    meta   = ml.get("model_meta", {})
     return {
-        "loaded":     loaded,
-        "model_type": ml.get("model_type", "unknown"),
-        "model_name": MLFLOW.model_name,
-        "version":    os.environ.get("MODEL_VERSION", "unknown"),
+        "loaded":       loaded,
+        "model_type":   ml.get("model_type", "unknown"),
+        "display_name": meta.get("display_name", ml.get("model_type", "unknown")),
+        "label":        meta.get("label", ml.get("model_type", "unknown")),
+        "model_name":   MLFLOW.model_name,
+        "version":      os.environ.get("MODEL_VERSION", "unknown"),
+        "params":       meta.get("params", {}),
+        "metrics":      meta.get("metrics", {}),
+        "run_id":       meta.get("run_id", ""),
+        "trained_at":   meta.get("trained_at", ""),
+        "filename":     meta.get("filename", "model.joblib"),
     }
+
+
+@app.get(
+    "/models",
+    tags=["Monitoring"],
+    summary="Liste tous les modèles disponibles dans MODEL_DIR",
+)
+def list_models() -> list[dict]:
+    """Scanne MODEL_DIR pour les fichiers `.meta.json` et retourne la liste des modèles.
+
+    Chaque entrée contient : filename, model_type, display_name, params, metrics, trained_at.
+    Le champ **loaded** indique si ce modèle est actuellement actif.
+    """
+    models: list[dict] = []
+    if MODEL_DIR.exists():
+        for meta_file in sorted(
+            MODEL_DIR.glob("model_*.meta.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                meta["loaded"] = (ml.get("model_meta", {}).get("filename") == meta.get("filename"))
+                models.append(meta)
+            except Exception:
+                pass
+    return models
+
+
+class SwitchRequest(BaseModel):
+    filename: str = Field(..., description="Nom du fichier .joblib à charger (ex : model_LightGBM_20260615.joblib)")
+
+
+@app.post(
+    "/models/switch",
+    tags=["Monitoring"],
+    summary="Change le modèle actif",
+)
+def switch_model(req: SwitchRequest) -> dict:
+    """Charge un modèle différent en mémoire sans redémarrer l'API.
+
+    Le modèle doit exister dans MODEL_DIR (listé par `GET /models`).
+    Toutes les requêtes `/predict` suivantes utiliseront ce nouveau modèle.
+    """
+    if not req.filename.endswith(".joblib"):
+        raise HTTPException(status_code=400, detail="Le fichier doit avoir l'extension .joblib")
+
+    model_path = MODEL_DIR / req.filename
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail=f"Fichier introuvable : {req.filename}")
+
+    pipeline = joblib.load(model_path)
+    ml["model"]      = pipeline
+    ml["model_type"] = type(pipeline.steps[-1][1]).__name__
+    ml["model_path"] = str(model_path)
+
+    meta_path = model_path.with_suffix("").with_suffix(".meta.json")
+    if meta_path.exists():
+        ml["model_meta"] = json.loads(meta_path.read_text(encoding="utf-8"))
+    else:
+        ml.pop("model_meta", None)
+
+    logger.info("Modèle switché -> %s (%s)", req.filename, ml["model_type"])
+    return {"switched_to": req.filename, "model_type": ml["model_type"]}
 
 
 @app.post(

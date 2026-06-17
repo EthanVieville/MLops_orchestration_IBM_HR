@@ -66,6 +66,15 @@ def train(c: float = 1.0, max_iter: int = 1000) -> dict:
 
         MODEL_DIR.mkdir(exist_ok=True)
         joblib.dump(pipeline, MODEL_DIR / "model.joblib")
+        from mlproject.model_registry import save_model_snapshot
+        save_model_snapshot(
+            pipeline,
+            label=f"LogisticRegression (C={c}, max_iter={max_iter})",
+            params={"C": c, "max_iter": max_iter, "class_weight": "balanced"},
+            metrics=metrics,
+            run_id=run.info.run_id,
+            save_as_champion=True,
+        )
         print(f"\n[OK] Modèle sauvegardé  -> {MODEL_DIR / 'model.joblib'}")
         print(f"[OK] Run MLflow         -> {run.info.run_id}")
 

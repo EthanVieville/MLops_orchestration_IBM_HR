@@ -226,6 +226,18 @@ def run_family(
         tracking.log_classification_report(y_test, y_pred)
         tracking.log_model(best_pipeline)
 
+        # Sauvegarde individuelle avec métadonnées pour le sélecteur de modèle
+        from mlproject.model_registry import save_model_snapshot
+        key_items = list(best_params.items())[:2]
+        params_str = ", ".join(f"{k}={v}" for k, v in key_items)
+        save_model_snapshot(
+            best_pipeline,
+            label=f"{spec.name} ({params_str})",
+            params=best_params,
+            metrics=metrics,
+            run_id=run.info.run_id,
+        )
+
         print(
             f"  [{spec.name:<20}]  "
             f"CV={cv_roc_auc:.4f}  "
@@ -313,6 +325,17 @@ def train_models(cv: int = 5) -> None:
 
     MODEL_DIR.mkdir(exist_ok=True)
     joblib.dump(best.pipeline, MODEL_DIR / "model.joblib")
+    from mlproject.model_registry import save_model_snapshot
+    key_items  = list(best.best_params.items())[:2]
+    params_str = ", ".join(f"{k}={v}" for k, v in key_items)
+    save_model_snapshot(
+        best.pipeline,
+        label=f"{best.name} champion ({params_str})",
+        params=best.best_params,
+        metrics=best.test_metrics,
+        run_id=best.run_id,
+        save_as_champion=True,
+    )
     print(f"\n[OK] Champion sauvegardé -> {MODEL_DIR / 'model.joblib'}")
 
     tracking.register_champion(best.run_id)

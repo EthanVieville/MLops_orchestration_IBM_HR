@@ -31,7 +31,8 @@ RESET  := $(shell printf '\033[0m')
         train train_models train_optuna evaluate check_pipeline mlflow_ui \
         api predict_client pipeline ci test docs-serve docs-build \
         docker-build docker-run docker-push \
-        compose-up compose-full compose-optuna compose-down compose-clean compose-monitoring compose-logs
+        compose-up compose-full compose-optuna compose-down compose-clean compose-monitoring compose-logs \
+        streamlit
 
 # ==============================================================================
 # Help
@@ -138,6 +139,14 @@ api: check-venv ## Lance l'API FastAPI en mode dev (PORT=8000)
 	@echo "   Santé : http://127.0.0.1:$(PORT)/health"
 	$(RUN) uvicorn mlproject.api:app --reload --host 127.0.0.1 --port $(PORT)
 
+streamlit: check-venv ## Lance le dashboard Streamlit en local (PORT=8501)
+	@echo "$(YELLOW)>> Démarrage du dashboard Streamlit...$(RESET)"
+	@echo "   Dashboard : http://127.0.0.1:8501"
+	$(RUN) streamlit run streamlit/app.py \
+		--server.port 8501 \
+		--server.address 127.0.0.1 \
+		--browser.gatherUsageStats false
+
 predict_client: check-venv ## Envoie des requêtes de test à l'API locale (PORT=8000)
 	@echo "$(YELLOW)>> Test client -> http://127.0.0.1:$(PORT)$(RESET)"
 	$(PYTHON) scripts/predict_client.py --url http://127.0.0.1:$(PORT)
@@ -187,9 +196,10 @@ docker-push: ## Pousse l'image sur le registre (IMAGE=ghcr.io/<owner>/mlproject-
 # Docker Compose — pipeline complète
 # ==============================================================================
 
-compose-up: ## Pipeline baseline : LogisticRegression (~30s) → API
+compose-up: ## Pipeline baseline : LogisticRegression (~30s) → API → Streamlit
 	@echo "$(YELLOW)>> Pipeline Docker Compose — mode baseline$(RESET)"
-	@echo "   API disponible sur : http://127.0.0.1:8000/docs"
+	@echo "   API       : http://127.0.0.1:8000/docs"
+	@echo "   Dashboard : http://127.0.0.1:8501"
 	TRAIN_MODE=baseline docker compose up --build
 
 compose-full: ## Pipeline GridSearchCV : 5 modèles CV=2 (~10 min) → API

@@ -25,7 +25,7 @@ Anticiper les départs permet aux RH de prioriser les actions de rétention sur 
 **IBM HR Analytics Employee Attrition & Performance**
 
 - 1 470 employés, 31 colonnes exploitables (4 colonnes constantes supprimées)
-- Target : `Attrition` — 83.9% No / 16.1% Yes (dataset déséquilibré)
+- Target : `Attrition` — 83.9 % No / 16.1 % Yes (dataset déséquilibré)
 - 23 features numériques, 7 features catégorielles
 
 ---
@@ -39,31 +39,45 @@ make install
 ## Commandes
 
 ```bash
-make install                            # installe les dépendances
-make train                              # baseline LogisticRegression (C=1.0)
-make train C=0.1                        # avec régularisation plus forte
-make train_models                       # compare 5 modèles via GridSearchCV + MLflow
-make train_models CV=3                  # run rapide (3 folds au lieu de 5)
-make train_optuna                       # optimisation Optuna TPE (LightGBM, 50 trials)
-make train_optuna MODEL=XGBoost N_TRIALS=100   # autre modèle, plus de trials
-make evaluate                           # évalue model.joblib sur le test set
-make evaluate SOURCE=registry           # évalue le @champion MLflow Registry
-make api                                # lance l'API FastAPI (http://127.0.0.1:8000/docs)
-make api PORT=8080                      # sur un port personnalisé
-make predict_client                     # envoie 3 requêtes de test à l'API locale
-make test                               # tests unitaires pytest
-make pipeline                           # pipeline complet : data -> train -> evaluate
-make ci                                 # CI locale : ruff + pytest + pipeline
-make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
-make check_pipeline                     # vérifie le pipeline de données
-make doctor                             # diagnostique l'environnement
+# ── Environnement ────────────────────────────────────────────────────────────
+make install                              # installe les dépendances (uv sync)
+make doctor                               # diagnostique l'environnement
+make ci                                   # CI locale : ruff + pytest + pipeline
 
-# Docker
-make docker-build                       # construit l'image API localement
-make docker-build IMAGE=myrepo/api TAG=1.0.0   # nom et tag personnalisés
-make docker-run                         # lance l'API dans un conteneur (port 8000)
-make docker-run PORT=8080               # sur un port personnalisé
-make docker-push IMAGE=ghcr.io/... TAG=1.0.0   # pousse l'image sur GHCR
+# ── Entraînement ─────────────────────────────────────────────────────────────
+make train                                # baseline LogisticRegression (C=1.0)
+make train C=0.1 MAX_ITER=500             # paramètres personnalisés
+make train_models                         # compare 5 modèles via GridSearchCV + MLflow
+make train_models CV=3                    # run rapide (3 folds au lieu de 5)
+make train_optuna                         # optimisation Optuna TPE (LightGBM, 50 trials)
+make train_optuna MODEL=XGBoost N_TRIALS=100
+
+# ── Évaluation & API ─────────────────────────────────────────────────────────
+make evaluate                             # évalue model.joblib sur le test set
+make evaluate SOURCE=registry             # évalue le @champion MLflow Registry
+make api                                  # API FastAPI sur http://127.0.0.1:8000/docs
+make predict_client                       # envoie 3 requêtes de test à l'API locale
+make mlflow_ui                            # MLflow UI sur http://127.0.0.1:5000
+
+# ── Dashboard Streamlit ───────────────────────────────────────────────────────
+make streamlit                            # dashboard sur http://127.0.0.1:8501
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+make test                                 # tests unitaires pytest
+
+# ── Docker (image API seule) ─────────────────────────────────────────────────
+make docker-build                         # construit l'image API localement
+make docker-run                           # lance l'API dans un conteneur (port 8000)
+make docker-push IMAGE=ghcr.io/... TAG=1.0.0
+
+# ── Docker Compose (pipeline complète) ───────────────────────────────────────
+make compose-up                           # baseline (~30 s) → API → Dashboard
+make compose-full                         # GridSearchCV 5 modèles (~10 min) → API → Dashboard
+make compose-optuna                       # Optuna LightGBM 20 trials (~5 min) → API → Dashboard
+make compose-monitoring                   # + MLflow UI sur http://127.0.0.1:5000
+make compose-down                         # arrête (conserve les volumes)
+make compose-clean                        # arrête + supprime les volumes
+make compose-logs                         # logs en temps réel
 ```
 
 ---
@@ -72,11 +86,11 @@ make docker-push IMAGE=ghcr.io/... TAG=1.0.0   # pousse l'image sur GHCR
 
 L'image Docker de l'API est construite automatiquement par la pipeline CD et publiée sur **GitHub Container Registry** (GHCR) à chaque push sur `main` ou tag de version.
 
-### Utilisation locale
+### Utilisation locale (image API seule)
 
 ```bash
 # 1. Entraîner un modèle (génère models/model.joblib)
-make train_models
+make train
 
 # 2. Construire l'image
 make docker-build
@@ -91,65 +105,97 @@ curl http://127.0.0.1:8000/health
 ### Utilisation de l'image GHCR
 
 ```bash
-# Récupérer la dernière image publiée
 docker pull ghcr.io/ethanvieville/td_orchestrationml_ethanvieville/mlproject-api:latest
 
-# Lancer avec un modèle local
 docker run --rm \
   -p 8000:8000 \
   -v "$(pwd)/models:/app/models:ro" \
   ghcr.io/ethanvieville/td_orchestrationml_ethanvieville/mlproject-api:latest
 ```
 
-> **Note** : le modèle (`models/model.joblib`) est monté en volume — il n'est pas inclus dans l'image. L'API démarre sans modèle et retourne 503 sur `/predict` jusqu'à ce qu'un modèle soit disponible.
+> **Note** : le modèle (`models/model.joblib`) est monté en volume — il n'est pas inclus dans l'image. L'API retourne 503 sur `/predict` jusqu'à ce qu'un modèle soit disponible.
 
 ---
 
 ## Pipeline complète avec Docker Compose
 
-`docker compose up` exécute la **pipeline de bout en bout** : données → entraînement → prédiction.
+`make compose-up` exécute la **pipeline de bout en bout** en une seule commande : données → entraînement → API → dashboard.
 
 ```
 trainer  ──► (écrit model.joblib)
                      │
                      ▼
 api      ──► http://127.0.0.1:8000
-```
-
-### Commandes
-
-```bash
-# Pipeline standard (entraînement + API)
-make compose-up
-
-# Pipeline + interface MLflow sur http://127.0.0.1:5000
-make compose-monitoring
-
-# Arrêter (les volumes model_vol et mlruns_vol sont conservés)
-make compose-down
-
-# Repartir de zéro (supprime aussi les volumes)
-make compose-clean
-
-# Voir les logs en direct
-make compose-logs
+                     │
+                     ▼
+streamlit ──► http://127.0.0.1:8501
 ```
 
 ### Ce qui se passe step by step
 
-1. **`trainer`** démarre : génère 400 lignes synthétiques si `data/` est vide, puis lance `train_models.py --cv 3` (GridSearchCV sur LR, RF, XGBoost, LightGBM, MLP). Écrit `model.joblib` dans le volume partagé et s'arrête.
-2. **`api`** démarre dès que `trainer` se termine avec succès (`service_completed_successfully`) : charge `model.joblib` et sert les prédictions sur `:8000`.
-3. (optionnel) **`mlflow-ui`** expose l'interface MLflow sur `:5000` avec toutes les métriques des runs.
+1. **`trainer`** — génère 400 lignes synthétiques si `data/` est vide, entraîne le modèle selon `TRAIN_MODE`, écrit `model.joblib` + les snapshots `.meta.json` dans le volume partagé, puis s'arrête.
+2. **`api`** — démarre dès que `trainer` termine avec succès, charge `model.joblib`, sert les prédictions sur `:8000`.
+3. **`streamlit`** — démarre dès que l'API est healthy (healthcheck OK), connecte sur `http://api:8000`, expose le dashboard sur `:8501`.
+4. *(optionnel)* **`mlflow-ui`** — expose l'interface MLflow sur `:5000` (profil `monitoring`).
 
-> Si tu as le vrai CSV IBM HR dans `data/`, il est monté automatiquement — sinon le dataset synthétique (400 lignes) est généré.
+### Modes d'entraînement
+
+| Commande | Mode | Algorithme | Durée |
+|---|---|---|---|
+| `make compose-up` | `baseline` | LogisticRegression (max_iter=300) | ~30 s |
+| `make compose-full` | `full` | GridSearchCV — 5 modèles, CV=2 | ~10 min |
+| `make compose-optuna` | `optuna` | Optuna TPE — LightGBM, 20 trials | ~5 min |
 
 ### Architecture des services
 
 | Service | Image | Rôle | Port |
 |---|---|---|---|
-| `trainer` | `docker/Dockerfile.trainer` | GridSearchCV 5 modèles → sauvegarde champion | — |
-| `api` | `docker/Dockerfile.api` | FastAPI inference `/predict` | 8000 |
-| `mlflow-ui` | `python:3.13-slim` + mlflow | Visualisation des runs | 5000 |
+| `trainer` | `docker/Dockerfile.trainer` | Entraînement → sauvegarde champion | — |
+| `api` | `docker/Dockerfile.api` | FastAPI `/predict`, `/models`, `/models/switch` | 8000 |
+| `streamlit` | `docker/Dockerfile.streamlit` | Dashboard MLOps 6 onglets | 8501 |
+| `mlflow-ui` | `python:3.13-slim` + mlflow | Visualisation des runs (profil monitoring) | 5000 |
+
+---
+
+## Dashboard Streamlit
+
+Interface complète accessible sur **http://127.0.0.1:8501** (local) ou via Docker Compose.
+
+| Onglet | Contenu |
+|---|---|
+| 🏠 Contexte | Problématique IBM HR, statistiques dataset, facteurs de risque, architecture MLOps |
+| 🔮 Prédiction | Formulaire employé (30 features) + jauge de risque + analyse des facteurs · mode batch CSV |
+| 📊 Modèles | Runs MLflow, comparaison métriques (graphes par métrique), meilleur run |
+| 🖼️ Artefacts | Matrice de confusion + classification report par run MLflow, téléchargement |
+| ⚗️ Entraînement | Lancer Personnalisé / GridSearchCV / Optuna avec logs temps réel · historique des runs |
+| 🔍 Exploration | Distributions par feature, corrélation avec l'attrition, stats descriptives |
+
+### Sélecteur de modèle
+
+Le sidebar liste tous les modèles entraînés disponibles (avec leurs métriques ROC-AUC / F1).  
+Un clic sur **↺ Charger ce modèle** switche instantanément le modèle actif dans l'API sans redémarrage.
+
+### Entraînement depuis le dashboard (mode local)
+
+L'onglet **⚗️ Entraînement** propose trois modes :
+
+- **🎯 Personnalisé** — choisir parmi les 5 modèles, configurer ses hyperparamètres, lancer avec logs live
+- **🔬 GridSearchCV** — comparer les 5 modèles, choisir le nombre de folds CV
+- **⚡ Optuna TPE** — optimiser le modèle de son choix avec le nombre de trials voulu
+
+> En mode Docker, seules les commandes à lancer sont affichées (le training s'exécute dans le conteneur `trainer`).
+
+---
+
+## API — Endpoints
+
+| Méthode | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Statut de l'API |
+| `GET` | `/model-info` | Modèle actif : type, display_name, métriques, params |
+| `GET` | `/models` | Liste tous les modèles disponibles dans `models/` |
+| `POST` | `/models/switch` | Change le modèle actif sans redémarrage |
+| `POST` | `/predict` | Prédiction d'attrition (30 features → 0/1 + probabilité) |
 
 ---
 
@@ -165,54 +211,61 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | MLP (PyTorch) | 0.7678 | 0.5321 | 0.6170 | 0.4688 |
 | XGBoost | 0.7600 | 0.4421 | 0.4468 | 0.4375 |
 
-> Champion actuel : **LogisticRegression** (C=0.1, class_weight=balanced) — enregistré dans le Model Registry MLflow sous l'alias `@champion`.  
-> Le MLP PyTorch obtient le meilleur F1 (0.53) et un Recall élevé (0.62) grâce au `pos_weight` interne — bon profil pour le contexte RH où rater un départ coûte cher.
+> Champion actuel : **LogisticRegression** (C=0.1, class_weight=balanced).  
+> Le MLP PyTorch obtient le meilleur F1 (0.53) et Recall (0.62) — bon profil pour le contexte RH où rater un départ coûte cher.
 
 ---
 
-## Structure actuelle
+## Structure
 
 ```
 .
 ├── data/
-│   └── ibm_hr_attrition.csv       # Dataset IBM (non versionné)
+│   └── ibm_hr_attrition.csv            # Dataset IBM (non versionné)
 ├── models/
-│   └── model.joblib               # Meilleur modèle (non versionné)
+│   ├── model.joblib                    # Champion courant (non versionné)
+│   ├── model.meta.json                 # Métadonnées du champion
+│   └── model_<label>_<ts>.joblib       # Snapshots horodatés par entraînement
 ├── docker/
-│   ├── Dockerfile.api             # Image Docker de l'API FastAPI (slim, ~500 Mo)
-│   ├── Dockerfile.trainer         # Image Docker pour l'entraînement (torch CPU, ~2 Go)
-│   ├── requirements-api.txt       # Dépendances minimales de serving
-│   └── requirements-train.txt     # Dépendances d'entraînement (ML stack)
-├── docker-compose.yml             # Pipeline complète : trainer → api (+ mlflow-ui optionnel)
+│   ├── Dockerfile.api                  # Image API slim (~500 Mo)
+│   ├── Dockerfile.trainer              # Image entraînement (torch CPU, ~2 Go)
+│   ├── Dockerfile.streamlit            # Image dashboard Streamlit (~300 Mo)
+│   ├── requirements-api.txt
+│   ├── requirements-train.txt
+│   ├── requirements-streamlit.txt
+│   └── train-entrypoint.sh             # Dispatch baseline / full / optuna
+├── docker-compose.yml                  # trainer → api → streamlit (+ mlflow-ui optionnel)
+├── streamlit/
+│   └── app.py                          # Dashboard Streamlit 6 onglets
 ├── mlproject/
-│   ├── config.py                  # DataConfig, MLflowConfig, DeployStage + aliases
-│   ├── data.py                    # Chargement & split 80/20 stratifié
-│   ├── features.py                # Préprocessing (StandardScaler + OneHotEncoder)
-│   ├── evaluation.py              # Calcul des métriques (f1, roc_auc, precision, recall)
-│   ├── tracking.py                # Interface centralisée MLflow (aucun autre fichier n'importe mlflow)
-│   ├── models.py                  # TorchMLPClassifier — MLP PyTorch compatible sklearn Pipeline
-│   ├── train.py                   # Baseline Logistic Regression + MLflow
-│   ├── train_models.py            # GridSearchCV sur 5 modèles + Model Registry
-│   ├── train_optuna.py            # Optimisation Optuna TPE + MLflow (un run par trial)
-│   ├── evaluate.py                # Évaluation du champion sauvegardé sur le test set
-│   └── api.py                     # API FastAPI : /health, /predict, /model-info
+│   ├── config.py                       # DataConfig, MLflowConfig, DeployStage
+│   ├── data.py                         # Chargement & split 80/20 stratifié
+│   ├── features.py                     # Préprocessing (StandardScaler + OneHotEncoder)
+│   ├── evaluation.py                   # Métriques (f1, roc_auc, precision, recall)
+│   ├── tracking.py                     # Interface centralisée MLflow
+│   ├── model_registry.py               # Sauvegarde modèles + .meta.json
+│   ├── models.py                       # TorchMLPClassifier compatible sklearn Pipeline
+│   ├── train.py                        # Baseline LogisticRegression
+│   ├── train_models.py                 # GridSearchCV 5 modèles + Model Registry
+│   ├── train_optuna.py                 # Optimisation Optuna TPE
+│   ├── train_custom.py                 # Entraînement personnalisé (modèle + params libres)
+│   ├── evaluate.py                     # Évaluation du champion sur le test set
+│   └── api.py                          # FastAPI : /health /predict /models /models/switch
 ├── scripts/
-│   └── predict_client.py          # Client HTTP de test pour l'API
+│   └── predict_client.py               # Client HTTP de test
 ├── tests/
-│   ├── conftest.py                # Fixtures pytest + génération dataset synthétique
-│   ├── generate_synthetic_data.py # Génère ibm_hr_attrition.csv synthétique (CI)
-│   ├── check_pipeline.py          # Validation rapide du pipeline de données (standalone)
-│   ├── test_data.py               # Tests chargement et split du dataset
-│   ├── test_features.py           # Tests pipeline de préprocessing
-│   ├── test_evaluation.py         # Tests calcul des métriques
-│   └── test_api.py                # Tests endpoints FastAPI
+│   ├── conftest.py
+│   ├── generate_synthetic_data.py
+│   ├── check_pipeline.py
+│   ├── test_data.py
+│   ├── test_features.py
+│   ├── test_evaluation.py
+│   └── test_api.py
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml                 # CI : tests unitaires + smoke test pipeline ML
-│       └── cd.yml                 # CD : build & push image Docker sur GHCR
-├── .dockerignore                  # Exclut .venv, data/, mlruns/ du contexte Docker
-├── .env                           # Variables d'environnement (non versionné)
-├── .env.example                   # Template .env
+│       ├── ci.yml                      # CI : ruff + pytest + smoke test pipeline
+│       └── cd.yml                      # CD : build & push image API sur GHCR
+├── .dockerignore
 ├── Makefile
 └── pyproject.toml
 ```
@@ -229,7 +282,7 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S7bis | Optimisation Optuna TPE + évaluation standalone | ✅ |
 | S12 | API FastAPI (/predict, /health, /model-info) | ✅ |
 | S15 | Tests pytest (25 tests) + CI GitHub Actions | ✅ |
-| S19 | Dockerfile API (multi-stage) + CD GitHub Actions → GHCR | ✅ |
-| S14 | Docker Compose (trainer + api + mlflow-ui) — pipeline from scratch | ✅ |
-| S14bis | Frontend Streamlit | 🔲 |
+| S19 | Dockerfile API + CD GitHub Actions → GHCR | ✅ |
+| S14 | Docker Compose (trainer → api → streamlit) — pipeline from scratch | ✅ |
+| S14bis | Dashboard Streamlit (6 onglets, entraînement live, sélecteur de modèle) | ✅ |
 | S17 | DAG Airflow | 🔲 |

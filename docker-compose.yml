@@ -4,14 +4,23 @@ name: ibm-hr-attrition
 #
 # Flux d'exécution :
 #   trainer → (produit model.joblib) → api → (sert les prédictions)
+#                                       └──────────────────────────► streamlit (dashboard)
 #
 # Lancement :
-#   docker compose up --build          # pipeline standard
+#   docker compose up --build          # pipeline standard  (baseline ~30s)
+#   make compose-up                    # idem, via Makefile
+#   make compose-full                  # GridSearchCV 5 modèles
+#   make compose-optuna                # Optuna LightGBM 20 trials
 #   docker compose --profile monitoring up --build   # + MLflow UI sur :5000
 #
+# Ports exposés :
+#   :8000 → API FastAPI  (docs : http://localhost:8000/docs)
+#   :8501 → Dashboard Streamlit
+#   :5000 → MLflow UI (profil monitoring uniquement)
+#
 # Volumes partagés :
-#   model_vol  : model.joblib écrit par trainer, lu par api
-#   mlruns_vol : base SQLite MLflow + artefacts
+#   model_vol  : model.joblib écrit par trainer, lu par api (lecture seule)
+#   mlruns_vol : base SQLite MLflow + artefacts (partagé trainer / streamlit)
 
 services:
 
@@ -60,6 +69,25 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 3
+
+  # ── Dashboard Streamlit ──────────────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    volumes:
+      - mlruns_vol:/app/mlruns:ro        # accès lecture aux runs MLflow
+      - ./data:/app/data:ro              # dataset IBM HR pour l'onglet Exploration
+    environment:
+      API_URL: http://api:8000
+      MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
+      MLFLOW_EXPERIMENT: ibm-hr-attrition
+    depends_on:
+      api:
+        condition: service_healthy       # attend que l'API soit prête
+    restart: unless-stopped
 
   # ── MLflow UI (optionnel) ─────────────────────────────────────────────────────
   # Lancé uniquement avec : docker compose --profile monitoring up
