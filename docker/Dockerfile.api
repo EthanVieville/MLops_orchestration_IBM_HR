@@ -1,0 +1,48 @@
+# ── Stage 1 : Builder ────────────────────────────────────────────────────────
+# Installe les dépendances dans un venv isolé.
+# On copie pyproject.toml + uv.lock AVANT le code source pour profiter
+# du cache Docker : tant que les deps ne changent pas, cette couche est réutilisée.
+FROM python:3.13-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+
+# --frozen         : respecte exactement uv.lock (reproductible)
+# --no-dev         : exclut pytest, ruff, mkdocs, etc.
+# --no-install-project : n'installe pas mlops-churn comme package (on copie
+#                        les sources directement dans le stage runtime)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# ── Stage 2 : Runtime ────────────────────────────────────────────────────────
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Virtualenv construit par le builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Code source de l'API uniquement
+COPY mlproject/ mlproject/
+
+# Répertoire pour le modèle (monté en volume au runtime ou via Docker Compose)
+RUN mkdir -p /app/models
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    # PYTHONPATH garantit que `import mlproject` trouve /app/mlproject/
+    # et que config.py calcule ROOT = /app (parents[1] de /app/mlproject/config.py)
+    PYTHONPATH="/app" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+
+# Health check Docker natif — l'orchestrateur peut redémarrer le conteneur si /health KO
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" \
+    || exit 1
+
+# 1 worker suffit pour l'inférence synchrone sklearn ; augmenter si charge élevée
+CMD ["uvicorn", "mlproject.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

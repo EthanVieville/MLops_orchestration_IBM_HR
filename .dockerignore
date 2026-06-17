@@ -1,0 +1,30 @@
+# Contrôle de version
+.git
+.gitignore
+.github/
+
+# Environnement Python local
+.venv/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Artefacts ML (montés en volume au runtime)
+mlruns/
+models/
+data/
+
+# Développement & tests
+tests/
+scripts/
+docs/
+site/
+
+# Documentation & config locale
+*.md
+Makefile
+mkdocs.yml
+.env
+.env.local

@@ -16,6 +16,9 @@ N_TRIALS ?= 50
 SOURCE   ?= file
 PORT     ?= 8000
 
+IMAGE    ?= mlproject-api
+TAG      ?= dev
+
 YELLOW := $(shell printf '\033[33m')
 GREEN  := $(shell printf '\033[32m')
 RED    := $(shell printf '\033[31m')
@@ -26,7 +29,8 @@ RESET  := $(shell printf '\033[0m')
 
 .PHONY: help check-uv check-venv install sync lock reset-env doctor \
         train train_models train_optuna evaluate check_pipeline mlflow_ui \
-        api predict_client pipeline ci test docs-serve docs-build
+        api predict_client pipeline ci test docs-serve docs-build \
+        docker-build docker-run docker-push
 
 # ==============================================================================
 # Help
@@ -149,6 +153,34 @@ docs-build: check-venv ## Génère la documentation statique dans site/
 	@echo "$(YELLOW)>> Build de la documentation...$(RESET)"
 	$(RUN) mkdocs build
 	@echo "$(GREEN)[OK] Documentation générée dans site/$(RESET)"
+
+# ==============================================================================
+# MLflow
+# ==============================================================================
+
+# ==============================================================================
+# Docker
+# ==============================================================================
+
+docker-build: ## Construit l'image Docker de l'API (IMAGE=mlproject-api TAG=dev)
+	@echo "$(YELLOW)>> Build de l'image Docker $(IMAGE):$(TAG)...$(RESET)"
+	docker build -f docker/Dockerfile.api -t $(IMAGE):$(TAG) .
+	@echo "$(GREEN)[OK] Image construite : $(IMAGE):$(TAG)$(RESET)"
+
+docker-run: ## Lance l'API dans un conteneur (PORT=8000, modèle local monté en lecture)
+	@echo "$(YELLOW)>> Démarrage du conteneur $(IMAGE):$(TAG)...$(RESET)"
+	@echo "   Docs  : http://127.0.0.1:$(PORT)/docs"
+	@echo "   Santé : http://127.0.0.1:$(PORT)/health"
+	docker run --rm \
+		-p $(PORT):8000 \
+		-v "$(CURDIR)/models:/app/models:ro" \
+		-e MODEL_VERSION=$(TAG) \
+		$(IMAGE):$(TAG)
+
+docker-push: ## Pousse l'image sur le registre (IMAGE=ghcr.io/<owner>/mlproject-api TAG=...)
+	@echo "$(YELLOW)>> Push de $(IMAGE):$(TAG)...$(RESET)"
+	docker push $(IMAGE):$(TAG)
+	@echo "$(GREEN)[OK] Image publiée$(RESET)"
 
 # ==============================================================================
 # MLflow

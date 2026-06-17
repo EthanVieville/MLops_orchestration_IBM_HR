@@ -1,6 +1,7 @@
 # Prédiction de l'attrition des employés — IBM HR Analytics
 
 ![CI](https://github.com/EthanVIEVILLE/td_orchestrationML_EthanVIEVILLE/actions/workflows/ci.yml/badge.svg)
+![CD](https://github.com/EthanVIEVILLE/td_orchestrationML_EthanVIEVILLE/actions/workflows/cd.yml/badge.svg)
 
 Pipeline MLOps de classification binaire pour prédire si un employé va quitter l'entreprise.
 
@@ -56,7 +57,51 @@ make ci                                 # CI locale : ruff + pytest + pipeline
 make mlflow_ui                          # ouvre l'UI MLflow sur http://127.0.0.1:5000
 make check_pipeline                     # vérifie le pipeline de données
 make doctor                             # diagnostique l'environnement
+
+# Docker
+make docker-build                       # construit l'image API localement
+make docker-build IMAGE=myrepo/api TAG=1.0.0   # nom et tag personnalisés
+make docker-run                         # lance l'API dans un conteneur (port 8000)
+make docker-run PORT=8080               # sur un port personnalisé
+make docker-push IMAGE=ghcr.io/... TAG=1.0.0   # pousse l'image sur GHCR
 ```
+
+---
+
+## Docker
+
+L'image Docker de l'API est construite automatiquement par la pipeline CD et publiée sur **GitHub Container Registry** (GHCR) à chaque push sur `main` ou tag de version.
+
+### Utilisation locale
+
+```bash
+# 1. Entraîner un modèle (génère models/model.joblib)
+make train_models
+
+# 2. Construire l'image
+make docker-build
+
+# 3. Lancer le conteneur (le dossier models/ est monté en lecture)
+make docker-run
+
+# 4. Tester
+curl http://127.0.0.1:8000/health
+```
+
+### Utilisation de l'image GHCR
+
+```bash
+# Récupérer la dernière image publiée
+docker pull ghcr.io/ethanvieville/td_orchestrationml_ethanvieville/mlproject-api:latest
+
+# Lancer avec un modèle local
+docker run --rm \
+  -p 8000:8000 \
+  -v "$(pwd)/models:/app/models:ro" \
+  ghcr.io/ethanvieville/td_orchestrationml_ethanvieville/mlproject-api:latest
+```
+
+> **Note** : le modèle (`models/model.joblib`) est monté en volume — il n'est pas inclus dans l'image. L'API démarre sans modèle et retourne 503 sur `/predict` jusqu'à ce qu'un modèle soit disponible.
 
 ---
 
@@ -85,6 +130,8 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 │   └── ibm_hr_attrition.csv       # Dataset IBM (non versionné)
 ├── models/
 │   └── model.joblib               # Meilleur modèle (non versionné)
+├── docker/
+│   └── Dockerfile.api             # Image Docker de l'API FastAPI (multi-stage)
 ├── mlproject/
 │   ├── config.py                  # DataConfig, MLflowConfig, DeployStage + aliases
 │   ├── data.py                    # Chargement & split 80/20 stratifié
@@ -109,9 +156,9 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 │   └── test_api.py                # Tests endpoints FastAPI
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                 # GitHub Actions : tests unitaires + smoke test pipeline
-├── tests/
-│   └── check_pipeline.py          # Validation du pipeline de données
+│       ├── ci.yml                 # CI : tests unitaires + smoke test pipeline ML
+│       └── cd.yml                 # CD : build & push image Docker sur GHCR
+├── .dockerignore                  # Exclut .venv, data/, mlruns/ du contexte Docker
 ├── .env                           # Variables d'environnement (non versionné)
 ├── .env.example                   # Template .env
 ├── Makefile
@@ -128,10 +175,9 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S5 | Baseline Logistic Regression + MLflow tracking | ✅ |
 | S6/S7 | Comparaison multi-modèles (GridSearchCV) + MLflow Registry | ✅ |
 | S7bis | Optimisation Optuna TPE + évaluation standalone | ✅ |
-| S8 | Dockerfile entraînement | 🔲 |
 | S12 | API FastAPI (/predict, /health, /model-info) | ✅ |
-| S15 | Tests pytest + CI GitHub Actions | ✅ |
-| S12 | API FastAPI | 🔲 |
+| S15 | Tests pytest (25 tests) + CI GitHub Actions | ✅ |
+| S19 | Dockerfile API (multi-stage) + CD GitHub Actions → GHCR | ✅ |
 | S14 | Docker Compose | 🔲 |
 | S14bis | Frontend Streamlit | 🔲 |
 | S17 | DAG Airflow | 🔲 |
