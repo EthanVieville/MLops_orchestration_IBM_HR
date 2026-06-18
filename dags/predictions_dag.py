@@ -144,6 +144,7 @@ with DAG(
     catchup=False,
     default_args=default_args,
     max_active_runs=1,
+    is_paused_upon_creation=False,  # actif dès le premier démarrage
     tags=["mlops", "ibm-hr", "predictions", "daily"],
     doc_md="""
 ## DAG daily_predictions

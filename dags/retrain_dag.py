@@ -60,19 +60,30 @@ def task_prepare_data(**context) -> dict:
 
 
 def task_train(**context) -> dict:
-    """S17-2 — Entraîne la baseline LogisticRegression et pousse les métriques en XCom.
+    """S17-2 — Compare 5 modèles (GridSearchCV CV=2) et garde le champion.
 
+    Utilise train_models() pour entraîner LogisticRegression, RandomForest,
+    XGBoost, LightGBM et MLP en parallèle, puis sélectionne le meilleur ROC-AUC.
     Sauvegarde model.joblib + model.meta.json dans MODEL_DIR.
-    Logue le run dans MLflow (URI configurée via MLFLOW_TRACKING_URI).
+    Logue chaque modèle dans MLflow et tague le run comme airflow.
     """
+    import json
     import mlflow
     from mlflow.tracking import MlflowClient
-    from mlproject.train import train
+    from mlproject.config import MODEL_DIR
+    from mlproject.train_models import train_models
 
-    print("=== Début de l'entraînement Airflow ===")
-    metrics = train()
+    print("=== Début de l'entraînement Airflow (5 modèles, CV=2) ===")
+    train_models(cv=2)  # entraîne les 5 modèles et sauvegarde le champion
 
-    # Tagger le dernier run MLflow comme déclenché par Airflow
+    # Lire les métriques du champion depuis le meta.json
+    meta_path = MODEL_DIR / "model.meta.json"
+    meta      = json.loads(meta_path.read_text(encoding="utf-8"))
+    metrics   = meta.get("metrics", {})
+    print(f"[Champion] {meta.get('display_name', '?')}")
+    print(f"[Métriques] {metrics}")
+
+    # Tagger les runs MLflow comme déclenchés par Airflow
     try:
         tracking_uri    = os.getenv("MLFLOW_TRACKING_URI")
         experiment_name = os.getenv("MLFLOW_EXPERIMENT", "ibm-hr-attrition")
@@ -80,27 +91,31 @@ def task_train(**context) -> dict:
         client     = MlflowClient()
         experiment = client.get_experiment_by_name(experiment_name)
         if experiment:
+            # Tagger les runs créés dans les 10 dernières minutes
+            import time as _time
+            recent_ms = int((_time.time() - 600) * 1000)
             runs = client.search_runs(
                 experiment_ids=[experiment.experiment_id],
+                filter_string=f"attributes.start_time > {recent_ms}",
                 order_by=["start_time DESC"],
-                max_results=1,
+                max_results=10,
             )
-            if runs:
-                rid = runs[0].info.run_id
-                client.set_tag(rid, "triggered_by",    "airflow")
-                client.set_tag(rid, "airflow_run_id",  context["dag_run"].run_id)
-                print(f"[MLflow] Run {rid[:8]} tagué triggered_by=airflow")
+            airflow_run_id = context["dag_run"].run_id
+            for r in runs:
+                client.set_tag(r.info.run_id, "triggered_by",   "airflow")
+                client.set_tag(r.info.run_id, "airflow_run_id", airflow_run_id)
+            print(f"[MLflow] {len(runs)} run(s) tagués triggered_by=airflow")
     except Exception as exc:
-        print(f"[WARN] Impossible de tagger le run MLflow : {exc}")
+        print(f"[WARN] Impossible de tagger les runs MLflow : {exc}")
 
-    # Pousser toutes les métriques pour que check_quality puisse les lire
+    # Pousser les métriques du champion pour check_quality
     ti = context["ti"]
-    ti.xcom_push(key="f1",        value=metrics["f1"])
-    ti.xcom_push(key="roc_auc",   value=metrics["roc_auc"])
-    ti.xcom_push(key="recall",    value=metrics["recall"])
-    ti.xcom_push(key="precision", value=metrics["precision"])
+    ti.xcom_push(key="f1",        value=float(metrics.get("f1",        0.0)))
+    ti.xcom_push(key="roc_auc",   value=float(metrics.get("roc_auc",   0.0)))
+    ti.xcom_push(key="recall",    value=float(metrics.get("recall",    0.0)))
+    ti.xcom_push(key="precision", value=float(metrics.get("precision", 0.0)))
 
-    print(f"\n[XCom] f1={metrics['f1']:.4f}  roc_auc={metrics['roc_auc']:.4f}")
+    print(f"\n[XCom] f1={metrics.get('f1',0):.4f}  roc_auc={metrics.get('roc_auc',0):.4f}")
     return metrics
 
 
@@ -139,13 +154,14 @@ with DAG(
     dag_id="model_retraining",
     description=(
         "Ré-entraînement planifié IBM HR Attrition — "
-        "préparation données → entraînement → contrôle qualité"
+        "préparation données → 5 modèles GridSearchCV → contrôle qualité"
     ),
     schedule="0 */5 * * *",        # toutes les 5 heures (0h, 5h, 10h, 15h, 20h)
     start_date=datetime(2024, 1, 1),
     catchup=False,                 # ne rejoue pas les runs manqués
     default_args=default_args,
     max_active_runs=1,             # évite les runs parallèles sur le même modèle
+    is_paused_upon_creation=False,  # actif dès le premier démarrage (pas de pause manuelle)
     tags=["mlops", "ibm-hr", "retraining"],
     doc_md="""
 ## DAG model_retraining
