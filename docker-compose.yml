@@ -89,6 +89,52 @@ services:
         condition: service_healthy       # attend que l'API soit prête
     restart: unless-stopped
 
+  # ── Airflow (optionnel) ───────────────────────────────────────────────────────
+  # Lancé uniquement avec : docker compose --profile airflow up
+  # UI sur http://localhost:8080 — login : airflow / airflow
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags                               # DAGs découverts automatiquement
+      - ./mlproject:/opt/airflow/project/mlproject             # package Python du projet
+      - ./tests:/opt/airflow/project/tests                     # generate_synthetic_data.py
+      - ./data:/opt/airflow/project/data                       # dataset (writable pour prepare_data)
+      - model_vol:/opt/airflow/project/models                  # modèles partagés avec api
+      - mlruns_vol:/opt/airflow/project/mlruns                 # MLflow runs partagés
+      - airflow_logs:/opt/airflow/logs                         # logs persistants entre redémarrages
+    environment:
+      # ── Airflow core ───────────────────────────────────────────────────────
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor              # mono-processus, adapté au dev local
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db  # home airflow, déjà writable
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"                    # pas de DAGs exemples
+      AIRFLOW__WEBSERVER__SECRET_KEY: "ibm-hr-attrition-mlops-secret-2024"
+      AIRFLOW__WEBSERVER__BASE_URL: "http://localhost:8080"
+      AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "30"          # scan dags/ toutes les 30s
+      # ── Projet ML ─────────────────────────────────────────────────────────
+      PYTHONPATH: /opt/airflow/project                         # active les imports mlproject.*
+      MLFLOW_TRACKING_URI: sqlite:////opt/airflow/project/mlruns/mlruns.db
+      MLFLOW_EXPERIMENT: ibm-hr-attrition
+      MODEL_NAME: attrition-classifier
+      DEPLOY_STAGE: champion
+      GIT_PYTHON_REFRESH: quiet
+      # ── DAG predictions ───────────────────────────────────────────────────
+      API_URL: http://api:8000                                  # joignable si api tourne aussi
+      N_PREDICTIONS: "20"
+      QUALITY_THRESHOLD: "0.35"
+    profiles:
+      - airflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 5
+
   # ── MLflow UI (optionnel) ─────────────────────────────────────────────────────
   # Lancé uniquement avec : docker compose --profile monitoring up
   mlflow-ui:
@@ -111,3 +157,4 @@ services:
 volumes:
   model_vol:    # modèle entraîné partagé entre trainer et api
   mlruns_vol:   # données MLflow (runs, métriques, artefacts)
+  airflow_logs: # logs Airflow persistants entre redémarrages

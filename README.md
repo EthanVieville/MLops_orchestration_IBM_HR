@@ -62,6 +62,14 @@ make mlflow_ui                            # MLflow UI sur http://127.0.0.1:5000
 # ── Dashboard Streamlit ───────────────────────────────────────────────────────
 make streamlit                            # dashboard sur http://127.0.0.1:8501
 
+# ── Airflow — Orchestration ───────────────────────────────────────────────────
+make airflow                              # Airflow seul sur http://127.0.0.1:8080
+make airflow-stack                        # stack complète (baseline) + Airflow
+make airflow-trigger                      # déclenche model_retraining manuellement
+make airflow-logs                         # logs Airflow en temps réel
+make airflow-down                         # arrête Airflow (conserve les données)
+make airflow-clean                        # repart from scratch (supprime le volume)
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 make test                                 # tests unitaires pytest
 
@@ -148,12 +156,13 @@ streamlit ──► http://127.0.0.1:8501
 
 ### Architecture des services
 
-| Service | Image | Rôle | Port |
-|---|---|---|---|
-| `trainer` | `docker/Dockerfile.trainer` | Entraînement → sauvegarde champion | — |
-| `api` | `docker/Dockerfile.api` | FastAPI `/predict`, `/models`, `/models/switch` | 8000 |
-| `streamlit` | `docker/Dockerfile.streamlit` | Dashboard MLOps 6 onglets | 8501 |
-| `mlflow-ui` | `python:3.13-slim` + mlflow | Visualisation des runs (profil monitoring) | 5000 |
+| Service | Image | Rôle | Port | Profil |
+|---|---|---|---|---|
+| `trainer` | `docker/Dockerfile.trainer` | Entraînement → sauvegarde champion | — | (toujours) |
+| `api` | `docker/Dockerfile.api` | FastAPI `/predict`, `/models`, `/models/switch` | 8000 | (toujours) |
+| `streamlit` | `docker/Dockerfile.streamlit` | Dashboard MLOps 6 onglets | 8501 | (toujours) |
+| `airflow` | `docker/Dockerfile.airflow` | Orchestration DAGs — UI Airflow | 8080 | `airflow` |
+| `mlflow-ui` | `python:3.13-slim` + mlflow | Visualisation des runs | 5000 | `monitoring` |
 
 ---
 
@@ -174,6 +183,50 @@ Interface complète accessible sur **http://127.0.0.1:8501** (local) ou via Dock
 
 Le sidebar liste tous les modèles entraînés disponibles (avec leurs métriques ROC-AUC / F1).  
 Un clic sur **↺ Charger ce modèle** switche instantanément le modèle actif dans l'API sans redémarrage.
+
+---
+
+## Orchestration Airflow
+
+Airflow orchestre le ré-entraînement planifié et les prédictions quotidiennes. Il tourne dans son propre conteneur Docker (profil `airflow`), partageant les volumes `model_vol` et `mlruns_vol` avec la stack principale.
+
+```
+┌─────────────────────────────────────────────────┐
+│  Airflow UI — http://localhost:8080             │
+│                                                 │
+│  DAG model_retraining  (lundi 3h)               │
+│    prepare_data → train → check_quality         │
+│                                                 │
+│  DAG daily_predictions  (tous les jours 10h)    │
+│    send_predictions → log_summary               │
+└─────────────────────────────────────────────────┘
+```
+
+### DAGs
+
+| DAG | Schedule | Tâches | Description |
+|---|---|---|---|
+| `model_retraining` | `0 3 * * 1` (lundi 3h) | prepare_data → train → check_quality | Ré-entraîne la baseline, valide F1 ≥ 0.35 via XCom |
+| `daily_predictions` | `0 10 * * *` (10h/jour) | send_predictions → log_summary | Envoie 20 employés à `/predict`, journalise le taux d'attrition |
+
+### Démarrage
+
+```bash
+# Airflow seul (retrain DAG uniquement)
+make airflow
+
+# Stack complète + Airflow (predictions DAG aussi)
+make airflow-stack
+```
+
+Login : **airflow / airflow** — UI : **http://localhost:8080**
+
+### Tester le garde-fou qualité
+
+Dans l'UI Airflow → **Admin → Variables** → ajouter `QUALITY_THRESHOLD = 0.99`,  
+puis re-déclencher le DAG → `check_quality` échoue, le modèle n'est pas livré.
+
+---
 
 ### Entraînement depuis le dashboard (mode local)
 
@@ -230,11 +283,17 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 │   ├── Dockerfile.api                  # Image API slim (~500 Mo)
 │   ├── Dockerfile.trainer              # Image entraînement (torch CPU, ~2 Go)
 │   ├── Dockerfile.streamlit            # Image dashboard Streamlit (~300 Mo)
+│   ├── Dockerfile.airflow              # Image Airflow 2.9 + dépendances ML
 │   ├── requirements-api.txt
 │   ├── requirements-train.txt
 │   ├── requirements-streamlit.txt
-│   └── train-entrypoint.sh             # Dispatch baseline / full / optuna
-├── docker-compose.yml                  # trainer → api → streamlit (+ mlflow-ui optionnel)
+│   ├── requirements-airflow.txt
+│   ├── train-entrypoint.sh             # Dispatch baseline / full / optuna
+│   └── airflow-entrypoint.sh           # Init DB + user + standalone
+├── docker-compose.yml                  # trainer → api → streamlit (+ airflow + mlflow-ui en profils)
+├── dags/
+│   ├── retrain_dag.py                  # DAG ré-entraînement (lundi 3h, XCom F1)
+│   └── predictions_dag.py              # DAG prédictions quotidiennes (10h/jour)
 ├── streamlit/
 │   └── app.py                          # Dashboard Streamlit 6 onglets
 ├── mlproject/
@@ -285,4 +344,4 @@ Critère de sélection : **ROC-AUC** (seuil-indépendant, robuste aux classes d�
 | S19 | Dockerfile API + CD GitHub Actions → GHCR | ✅ |
 | S14 | Docker Compose (trainer → api → streamlit) — pipeline from scratch | ✅ |
 | S14bis | Dashboard Streamlit (6 onglets, entraînement live, sélecteur de modèle) | ✅ |
-| S17 | DAG Airflow | 🔲 |
+| S17 | DAG Airflow (retrain + predictions, XCom, garde-fou qualité) | ✅ |

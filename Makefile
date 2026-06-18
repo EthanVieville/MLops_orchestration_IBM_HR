@@ -32,7 +32,8 @@ RESET  := $(shell printf '\033[0m')
         api predict_client pipeline ci test docs-serve docs-build \
         docker-build docker-run docker-push \
         compose-up compose-full compose-optuna compose-down compose-clean compose-monitoring compose-logs \
-        streamlit
+        streamlit \
+        airflow airflow-stack airflow-down airflow-logs airflow-trigger airflow-clean
 
 # ==============================================================================
 # Help
@@ -233,6 +234,41 @@ compose-logs: ## Affiche les logs en temps réel
 # ==============================================================================
 # MLflow
 # ==============================================================================
+
+# ==============================================================================
+# Airflow — Orchestration des DAGs
+# ==============================================================================
+
+airflow: ## Lance Airflow standalone seul sur http://127.0.0.1:8080 (login : airflow / airflow)
+	@echo "$(YELLOW)>> Démarrage Airflow...$(RESET)"
+	@echo "   UI          : http://127.0.0.1:8080"
+	@echo "   Login       : airflow / airflow"
+	@echo "   DAGs        : dags/retrain_dag.py  dags/predictions_dag.py"
+	docker compose --profile airflow up --build airflow
+
+airflow-stack: ## Lance toute la stack ML + Airflow (API disponible pour daily_predictions)
+	@echo "$(YELLOW)>> Démarrage stack complète + Airflow...$(RESET)"
+	@echo "   API         : http://127.0.0.1:8000/docs"
+	@echo "   Dashboard   : http://127.0.0.1:8501"
+	@echo "   Airflow UI  : http://127.0.0.1:8080"
+	TRAIN_MODE=baseline docker compose --profile airflow up --build
+
+airflow-down: ## Arrête Airflow (conserve le volume airflow_data)
+	@echo "$(YELLOW)>> Arrêt Airflow...$(RESET)"
+	docker compose --profile airflow down
+
+airflow-logs: ## Affiche les logs Airflow en temps réel
+	docker compose --profile airflow logs -f airflow
+
+airflow-trigger: ## Déclenche manuellement le DAG model_retraining
+	@echo "$(YELLOW)>> Trigger DAG model_retraining...$(RESET)"
+	docker compose --profile airflow exec airflow airflow dags trigger model_retraining
+	@echo "$(GREEN)[OK] DAG déclenché — consulter http://127.0.0.1:8080$(RESET)"
+
+airflow-clean: ## Supprime les conteneurs + volume Airflow (repart from scratch)
+	@echo "$(YELLOW)>> Nettoyage Airflow (conteneurs + volume)...$(RESET)"
+	docker compose --profile airflow down -v
+	@echo "$(GREEN)[OK] Airflow réinitialisé$(RESET)"
 
 mlflow_ui: ## Lance l'interface MLflow sur http://127.0.0.1:5000
 	@echo "$(YELLOW)>> Démarrage MLflow UI...$(RESET)"
