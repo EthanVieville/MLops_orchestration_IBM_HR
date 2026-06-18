@@ -304,6 +304,20 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+
+    # ── Accès rapide — URLs déduites de l'hôte courant ───────────────────────
+    st.markdown("**🔗 Accès rapide**")
+    try:
+        _host = st.context.headers.get("host", "localhost").split(":")[0]
+    except Exception:
+        _host = "localhost"
+
+    st.link_button("📖 API Docs", f"http://{_host}:8000/docs", use_container_width=True)
+    st.link_button("🔄 Airflow UI", f"http://{_host}:8080", use_container_width=True)
+    st.link_button("📊 MLflow UI", f"http://{_host}:5000", use_container_width=True)
+    st.caption("MLflow UI : `make compose-monitoring`")
+
+    st.divider()
     st.caption("Stack : scikit-learn · LightGBM · XGBoost · PyTorch · MLflow · FastAPI · Streamlit · Docker")
 
 
@@ -1161,14 +1175,28 @@ with tab6:
 # TAB 7 — Orchestration Airflow
 # ══════════════════════════════════════════════════════════════════════════════
 with tab7:
-    st.title("🔄 Orchestration Airflow")
+    t7_left, t7_right = st.columns([5, 1])
+    t7_left.title("🔄 Orchestration Airflow")
+    if t7_right.button("↺ Actualiser", key="refresh_orches", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
     af_url = st.text_input(
-        "🔗 URL Airflow",
+        "🔗 URL Airflow (interne Docker)",
         value=st.session_state.airflow_url,
         key="airflow_url_input",
+        help="URL utilisée par Streamlit pour appeler l'API REST Airflow (communication inter-conteneurs).",
     )
     st.session_state.airflow_url = af_url
+
+    with st.expander("🔧 Debug — configuration active"):
+        st.code(
+            f"Airflow API  : {af_url}\n"
+            f"MLflow URI   : {mlf_uri}\n"
+            f"Expérience   : {mlf_exp}",
+            language="text",
+        )
+        st.caption("Si le MLflow URI pointe vers un fichier local introuvable, changez-le dans la barre latérale.")
 
     af_ok = airflow_health(af_url)
 
