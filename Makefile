@@ -240,19 +240,20 @@ compose-logs: ## Affiche les logs en temps réel
 # Stack complète — production / déploiement cloud
 # ==============================================================================
 
-start: ## Lance toute la stack en arrière-plan : baseline → API → Streamlit → Airflow
+start: ## Lance toute la stack en arrière-plan : baseline → API → Streamlit → Airflow → MLflow UI
 	@echo "$(YELLOW)>> Démarrage de la stack complète...$(RESET)"
 	@echo "   API       : http://localhost:8000/docs"
 	@echo "   Dashboard : http://localhost:8501"
 	@echo "   Airflow   : http://localhost:8080  (airflow / airflow)"
-	TRAIN_MODE=baseline docker compose --profile airflow up --build -d
+	@echo "   MLflow UI : http://localhost:5000"
+	TRAIN_MODE=baseline docker compose --profile airflow --profile monitoring up --build -d
 	@echo ""
 	@echo "$(GREEN)[OK] Stack démarrée en arrière-plan$(RESET)"
-	docker compose --profile airflow ps
+	docker compose --profile airflow --profile monitoring ps
 
 stop: ## Arrête toute la stack (conserve les volumes)
 	@echo "$(YELLOW)>> Arrêt de la stack...$(RESET)"
-	docker compose --profile airflow down
+	docker compose --profile airflow --profile monitoring down
 	@echo "$(GREEN)[OK] Stack arrêtée$(RESET)"
 
 restart: stop start ## Redémarre toute la stack (stop + start)
