@@ -2,7 +2,7 @@
 
 Pipeline : préparation des données → entraînement → contrôle qualité
 
-Planification : tous les lundis à 3h (cron : "0 3 * * 1")
+Planification : toutes les 5 heures (cron : "0 */5 * * *")
 XCom          : task_train pousse f1 + roc_auc → task_check_quality les lit
 Garde-fou     : check_quality échoue si F1 < QUALITY_THRESHOLD (DAG run = failed)
 
@@ -118,7 +118,7 @@ with DAG(
         "Ré-entraînement planifié IBM HR Attrition — "
         "préparation données → entraînement → contrôle qualité"
     ),
-    schedule="0 3 * * 1",         # S17-4 : tous les lundis à 3h
+    schedule="0 */5 * * *",        # toutes les 5 heures (0h, 5h, 10h, 15h, 20h)
     start_date=datetime(2024, 1, 1),
     catchup=False,                 # ne rejoue pas les runs manqués
     default_args=default_args,
@@ -135,6 +135,10 @@ Pipeline de ré-entraînement automatique du modèle IBM HR Attrition.
 | `prepare_data` | Génère des données synthétiques si le CSV est absent |
 | `train` | Entraîne la baseline LogisticRegression, logue dans MLflow |
 | `check_quality` | Vérifie F1 ≥ QUALITY_THRESHOLD (défaut 0.35) via XCom |
+
+### Planification
+Toutes les 5 heures : 0h, 5h, 10h, 15h, 20h.
+Le DAG `daily_predictions` se déclenche 30 min après (0h30, 5h30...) pour laisser le temps au retrain de finir.
 
 ### Tester le garde-fou
 Mettre `QUALITY_THRESHOLD=0.99` dans les variables Airflow (Admin → Variables)

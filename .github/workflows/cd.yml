@@ -14,13 +14,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
+  # ── 1. Build & push de l'image API sur GHCR ─────────────────────────────────
   build-push:
     name: Build & push de l'image API (GHCR)
     runs-on: ubuntu-latest
 
-    # Permissions nécessaires :
-    #   contents: read  — accès en lecture au dépôt (checkout)
-    #   packages: write — push de l'image vers ghcr.io
     permissions:
       contents: read
       packages: write
@@ -65,3 +64,39 @@ jobs:
           # Cache GitHub Actions — évite de reconstruire les couches inchangées
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── 2. Déploiement sur Oracle Cloud (main uniquement) ────────────────────────
+  # Pré-requis — secrets GitHub à configurer :
+  #   ORACLE_HOST     : IP publique du VPS (ex: 140.x.x.x)
+  #   ORACLE_USER     : utilisateur SSH (généralement "ubuntu" sur Oracle Linux/Ubuntu)
+  #   ORACLE_SSH_KEY  : contenu de la clé privée SSH (le fichier .pem complet)
+  #
+  # Pré-requis sur le VPS (une seule fois, manuel) :
+  #   git clone https://github.com/<owner>/<repo>.git ~/td_orchestrationML_EthanVIEVILLE
+  deploy:
+    name: Déploiement sur Oracle Cloud
+    needs: build-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: SSH → git pull + redémarrage de la stack
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          script: |
+            set -e
+            cd ~/td_orchestrationML_EthanVIEVILLE
+
+            echo "=== [1/3] Récupération du code ==="
+            git pull origin main
+
+            echo "=== [2/3] Redémarrage de la stack ==="
+            TRAIN_MODE=baseline docker compose --profile airflow up --build -d
+
+            echo "=== [3/3] État des conteneurs ==="
+            docker compose --profile airflow ps
+
+            echo "[OK] Déploiement terminé — $(date)"

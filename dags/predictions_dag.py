@@ -1,13 +1,13 @@
-"""DAG Airflow — Prédictions quotidiennes via l'API IBM HR Attrition.
+"""DAG Airflow — Prédictions toutes les 5h via l'API IBM HR Attrition.
 
-Chaque jour à 10h, échantillonne N employés du dataset et envoie leurs
-caractéristiques à l'endpoint POST /predict de l'API. Simule un trafic de
-production et alimente la boucle de feedback.
+Toutes les 5 heures (30 min après le retrain), échantillonne N employés du dataset
+et envoie leurs caractéristiques à l'endpoint POST /predict de l'API.
+Simule un trafic de production et alimente la boucle de feedback.
 
 Pré-requis : l'API doit être joignable (make api ou make compose-up).
 
 XCom : n_predictions + n_attrition poussés par send_predictions
-Planification : tous les jours à 10h (cron : "0 10 * * *")
+Planification : toutes les 5h avec décalage de 30 min (cron : "30 */5 * * *")
 """
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ with DAG(
         "Prédictions quotidiennes — envoie N employés à l'API /predict "
         "pour simuler le trafic de production"
     ),
-    schedule="0 10 * * *",        # S17-8 : tous les jours à 10h
+    schedule="30 */5 * * *",       # 30 min après le retrain (0h30, 5h30, 10h30, 15h30, 20h30)
     start_date=datetime(2024, 1, 1),
     catchup=False,
     default_args=default_args,
