@@ -258,6 +258,9 @@ def list_models() -> list[dict]:
         ):
             try:
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                joblib_name = meta.get("filename", "")
+                if joblib_name and not (MODEL_DIR / joblib_name).exists():
+                    continue
                 meta["loaded"] = (ml.get("model_meta", {}).get("filename") == meta.get("filename"))
                 models.append(meta)
             except Exception:
@@ -287,12 +290,20 @@ def switch_model(req: SwitchRequest) -> dict:
     if not model_path.exists():
         raise HTTPException(status_code=404, detail=f"Fichier introuvable : {req.filename}")
 
-    pipeline = joblib.load(model_path)
+    try:
+        pipeline = joblib.load(model_path)
+    except Exception as exc:
+        logger.error("Impossible de charger %s : %s", req.filename, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Impossible de charger le modèle '{req.filename}' : {exc}",
+        ) from exc
+
     ml["model"]      = pipeline
     ml["model_type"] = type(pipeline.steps[-1][1]).__name__
     ml["model_path"] = str(model_path)
 
-    meta_path = model_path.with_suffix("").with_suffix(".meta.json")
+    meta_path = model_path.parent / (model_path.stem + ".meta.json")
     if meta_path.exists():
         ml["model_meta"] = json.loads(meta_path.read_text(encoding="utf-8"))
     else:
