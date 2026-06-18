@@ -88,7 +88,7 @@ jobs:
           key: ${{ secrets.ORACLE_SSH_KEY }}
           script: |
             set -e
-            cd ~/td_orchestrationML_EthanVIEVILLE
+            cd ~/MLopsIABD_orchestration_IBM_HR
 
             echo "=== [1/3] Récupération du code ==="
             git pull origin main
