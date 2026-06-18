@@ -144,13 +144,14 @@ services:
       - "5000:5000"
     volumes:
       - mlruns_vol:/app/mlruns
+      - ./docker/mlflow_serve.py:/mlflow_serve.py:ro
     environment:
       MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
       MLFLOW_DEFAULT_ARTIFACT_ROOT: /app/mlruns/artifacts
     command:
       - /bin/sh
       - -c
-      - "pip install -q --no-cache-dir mlflow gunicorn && gunicorn --bind 0.0.0.0:5000 --workers 1 --forwarded-allow-ips='*' mlflow.server:app"
+      - "pip install -q --no-cache-dir mlflow gunicorn && gunicorn --bind 0.0.0.0:5000 --workers 1 --chdir / mlflow_serve:app"
     profiles:
       - monitoring
     restart: unless-stopped
