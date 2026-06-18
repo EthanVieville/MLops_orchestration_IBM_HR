@@ -106,12 +106,11 @@ services:
       - ./data:/opt/airflow/project/data                       # dataset (writable pour prepare_data)
       - model_vol:/opt/airflow/project/models                  # modèles partagés avec api
       - mlruns_vol:/opt/airflow/project/mlruns                 # MLflow runs partagés
-      - airflow_logs:/opt/airflow/logs                         # logs persistants entre redémarrages
-      - airflow_db:/opt/airflow/db                             # SQLite Airflow persistant (runs, XCom, users)
+      - airflow_logs:/opt/airflow/logs                         # logs + DB SQLite persistants entre redémarrages
     environment:
       # ── Airflow core ───────────────────────────────────────────────────────
       AIRFLOW__CORE__EXECUTOR: SequentialExecutor              # mono-processus, adapté au dev local
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/db/airflow.db  # volume persistant
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/logs/airflow.db  # volume persistant (logs déjà writable)
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"                    # pas de DAGs exemples
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"      # DAGs actifs dès le premier démarrage
       AIRFLOW__WEBSERVER__SECRET_KEY: "ibm-hr-attrition-mlops-secret-2024"
@@ -161,5 +160,4 @@ services:
 volumes:
   model_vol:    # modèle entraîné partagé entre trainer et api
   mlruns_vol:   # données MLflow (runs, métriques, artefacts)
-  airflow_logs: # logs Airflow persistants entre redémarrages
-  airflow_db:   # base SQLite Airflow (DAG runs, XCom, tâches) — DOIT être persistant
+  airflow_logs: # logs + base SQLite Airflow persistants entre redémarrages

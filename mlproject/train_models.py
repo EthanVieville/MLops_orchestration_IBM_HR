@@ -36,7 +36,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass  # Airflow remplace sys.stdout par StreamLogWriter qui ne supporte pas reconfigure
 
 # LightGBM reçoit parfois des arrays numpy sans noms de colonnes pendant la CV
 # (comportement interne de GridSearchCV) — warning cosmétique, sans impact
