@@ -1271,44 +1271,77 @@ with tab7:
     else:
         st.info("Aucun run pour model_retraining — déclenchez `make airflow-trigger`.")
 
-    # ── Évolution F1 via MLflow ───────────────────────────────────────────────
-    st.subheader("📈 Évolution du F1 (MLflow)")
+    # ── Évolution F1 / ROC-AUC via MLflow ────────────────────────────────────
+    st.subheader("📈 Évolution F1 / ROC-AUC (MLflow)")
 
     with st.spinner("Chargement des métriques MLflow…"):
         df_mlf7 = mlflow_runs(mlf_uri, mlf_exp)
 
-    if not df_mlf7.empty:
-        f1_col  = next((c for c in ["metrics.f1", "metrics.test_f1"]      if c in df_mlf7.columns), None)
-        auc_col = next((c for c in ["metrics.roc_auc","metrics.test_roc_auc"] if c in df_mlf7.columns), None)
+    if df_mlf7.empty:
+        st.info("Aucun run MLflow — lancez `make airflow-trigger` ou `make compose-up`.")
+    else:
+        f1_col  = next((c for c in ["metrics.f1", "metrics.test_f1"]         if c in df_mlf7.columns), None)
+        auc_col = next((c for c in ["metrics.roc_auc", "metrics.test_roc_auc"] if c in df_mlf7.columns), None)
+        rn_col7 = "tags.mlflow.runName" if "tags.mlflow.runName" in df_mlf7.columns else "run_id"
 
-        if f1_col:
-            df_tl = df_mlf7[["start_time", f1_col] + ([auc_col] if auc_col else [])].dropna(subset=[f1_col]).copy()
-            df_tl = df_tl.sort_values("start_time")
-            df_tl["start_time"] = pd.to_datetime(df_tl["start_time"])
+        if not f1_col:
+            st.info("Aucune métrique F1 trouvée dans MLflow.")
+        else:
+            cols_needed = ["start_time", rn_col7, "run_id", f1_col] + ([auc_col] if auc_col else [])
+            df_tl = df_mlf7[cols_needed].dropna(subset=[f1_col]).copy()
+            df_tl = df_tl.sort_values("start_time").reset_index(drop=True)
+            df_tl["run_label"] = (
+                df_tl[rn_col7].fillna("").where(df_tl[rn_col7].fillna("") != "", df_tl["run_id"].str[:8])
+            )
 
-            if len(df_tl) >= 2:
-                fig, ax = plt.subplots(figsize=(12, 4))
-                ax.plot(df_tl["start_time"], df_tl[f1_col],
+            # Source tag (airflow vs manual)
+            if "tags.triggered_by" in df_mlf7.columns:
+                src = df_mlf7.loc[df_tl.index, "tags.triggered_by"].fillna("manual").tolist()
+            else:
+                src = ["manual"] * len(df_tl)
+            df_tl["source"] = src
+
+            # ── Table des runs ────────────────────────────────────────────────
+            tbl = df_tl[["run_label", "start_time", f1_col, "source"]
+                        + ([auc_col] if auc_col else [])].copy()
+            tbl["start_time"] = pd.to_datetime(tbl["start_time"]).dt.strftime("%Y-%m-%d %H:%M")
+            tbl["source"] = tbl["source"].map({"airflow": "🔄 Airflow", "manual": "🖐 Manuel"}).fillna("🖐 Manuel")
+            rename_map = {"run_label": "Run", "start_time": "Date", f1_col: "F1", "source": "Source"}
+            if auc_col:
+                rename_map[auc_col] = "ROC-AUC"
+            st.dataframe(tbl.rename(columns=rename_map), use_container_width=True, hide_index=True)
+
+            # ── Graphique adaptatif ───────────────────────────────────────────
+            if len(df_tl) == 0:
+                st.info("Aucun run avec métriques F1.")
+            else:
+                labels = [str(l)[:22] for l in df_tl["run_label"].tolist()]
+                x      = list(range(len(df_tl)))
+
+                fig, ax = plt.subplots(figsize=(max(8, len(df_tl) * 1.2), 4))
+                ax.plot(x, df_tl[f1_col].tolist(),
                         marker="o", color="#3498db", linewidth=2, label="F1")
                 if auc_col and auc_col in df_tl.columns:
-                    ax.plot(df_tl["start_time"], df_tl[auc_col],
+                    ax.plot(x, df_tl[auc_col].tolist(),
                             marker="s", color="#2ecc71", linewidth=2, linestyle="--", label="ROC-AUC")
+
+                # Points Airflow en rouge
+                af_idx = [i for i, s in enumerate(df_tl["source"].tolist()) if s == "airflow"]
+                if af_idx:
+                    ax.scatter(af_idx, df_tl[f1_col].iloc[af_idx].tolist(),
+                               s=120, color="#e74c3c", zorder=5, label="Airflow ▲")
+
                 ax.axhline(QUALITY_THRESHOLD, color="#e74c3c", linestyle=":", linewidth=1.5,
                            label=f"Seuil qualité ({QUALITY_THRESHOLD})")
+                ax.set_xticks(x)
+                ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=9)
                 ax.set_ylabel("Score")
-                ax.set_title("Métriques des réentraînements automatiques dans le temps")
+                ax.set_title("Évolution des métriques par run")
                 ax.legend()
                 ax.grid(alpha=0.3)
-                plt.xticks(rotation=30, ha="right")
                 plt.tight_layout()
                 st.pyplot(fig, use_container_width=True)
                 plt.close(fig)
-            else:
-                st.info("Minimum 2 runs nécessaires pour tracer la courbe.")
-        else:
-            st.info("Aucune métrique F1 trouvée dans MLflow.")
-    else:
-        st.info("Aucun run MLflow disponible.")
 
     st.divider()
 

@@ -65,10 +65,33 @@ def task_train(**context) -> dict:
     Sauvegarde model.joblib + model.meta.json dans MODEL_DIR.
     Logue le run dans MLflow (URI configurée via MLFLOW_TRACKING_URI).
     """
+    import mlflow
+    from mlflow.tracking import MlflowClient
     from mlproject.train import train
 
     print("=== Début de l'entraînement Airflow ===")
     metrics = train()
+
+    # Tagger le dernier run MLflow comme déclenché par Airflow
+    try:
+        tracking_uri    = os.getenv("MLFLOW_TRACKING_URI")
+        experiment_name = os.getenv("MLFLOW_EXPERIMENT", "ibm-hr-attrition")
+        mlflow.set_tracking_uri(tracking_uri)
+        client     = MlflowClient()
+        experiment = client.get_experiment_by_name(experiment_name)
+        if experiment:
+            runs = client.search_runs(
+                experiment_ids=[experiment.experiment_id],
+                order_by=["start_time DESC"],
+                max_results=1,
+            )
+            if runs:
+                rid = runs[0].info.run_id
+                client.set_tag(rid, "triggered_by",    "airflow")
+                client.set_tag(rid, "airflow_run_id",  context["dag_run"].run_id)
+                print(f"[MLflow] Run {rid[:8]} tagué triggered_by=airflow")
+    except Exception as exc:
+        print(f"[WARN] Impossible de tagger le run MLflow : {exc}")
 
     # Pousser toutes les métriques pour que check_quality puisse les lire
     ti = context["ti"]
