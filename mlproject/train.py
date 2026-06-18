@@ -7,7 +7,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass
 
 import joblib
 from sklearn.linear_model import LogisticRegression

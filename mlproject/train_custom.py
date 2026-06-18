@@ -15,7 +15,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass
 
 import warnings
 warnings.filterwarnings("ignore", message="X does not have valid feature names", category=UserWarning)

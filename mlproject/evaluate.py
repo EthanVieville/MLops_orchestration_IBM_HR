@@ -16,7 +16,10 @@ import argparse
 import sys
 from datetime import datetime
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass
 
 import joblib
 

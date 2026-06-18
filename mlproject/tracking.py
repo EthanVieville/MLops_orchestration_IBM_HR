@@ -21,7 +21,10 @@ import contextlib
 import sys
 from typing import Generator
 
-sys.stdout.reconfigure(encoding="utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except AttributeError:
+    pass
 
 import matplotlib
 matplotlib.use("Agg")
