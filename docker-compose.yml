@@ -144,10 +144,13 @@ services:
       - "5000:5000"
     volumes:
       - mlruns_vol:/app/mlruns
+    environment:
+      MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: /app/mlruns/artifacts
     command:
       - /bin/sh
       - -c
-      - "pip install -q --no-cache-dir mlflow && mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:////app/mlruns/mlruns.db --default-artifact-root /app/mlruns/artifacts"
+      - "pip install -q --no-cache-dir mlflow gunicorn && gunicorn --bind 0.0.0.0:5000 --workers 1 --forwarded-allow-ips='*' mlflow.server:app"
     profiles:
       - monitoring
     restart: unless-stopped
