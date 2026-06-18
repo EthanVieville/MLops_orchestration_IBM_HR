@@ -94,9 +94,7 @@ jobs:
             git pull https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git main
 
             echo "=== [2/3] Redémarrage de la stack ==="
-            TRAIN_MODE=baseline docker compose --profile airflow up --build -d
-
-            echo "=== [3/3] État des conteneurs ==="
-            docker compose --profile airflow ps
+            which make || sudo apt-get install -y --quiet make
+            make start
 
             echo "[OK] Déploiement terminé — $(date)"

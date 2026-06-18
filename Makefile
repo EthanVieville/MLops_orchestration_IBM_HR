@@ -33,6 +33,7 @@ RESET  := $(shell printf '\033[0m')
         docker-build docker-run docker-push \
         compose-up compose-full compose-optuna compose-down compose-clean compose-monitoring compose-logs \
         streamlit \
+        start stop restart \
         airflow airflow-stack airflow-down airflow-logs airflow-trigger airflow-clean
 
 # ==============================================================================
@@ -234,6 +235,27 @@ compose-logs: ## Affiche les logs en temps réel
 # ==============================================================================
 # MLflow
 # ==============================================================================
+
+# ==============================================================================
+# Stack complète — production / déploiement cloud
+# ==============================================================================
+
+start: ## Lance toute la stack en arrière-plan : baseline → API → Streamlit → Airflow
+	@echo "$(YELLOW)>> Démarrage de la stack complète...$(RESET)"
+	@echo "   API       : http://localhost:8000/docs"
+	@echo "   Dashboard : http://localhost:8501"
+	@echo "   Airflow   : http://localhost:8080  (airflow / airflow)"
+	TRAIN_MODE=baseline docker compose --profile airflow up --build -d
+	@echo ""
+	@echo "$(GREEN)[OK] Stack démarrée en arrière-plan$(RESET)"
+	docker compose --profile airflow ps
+
+stop: ## Arrête toute la stack (conserve les volumes)
+	@echo "$(YELLOW)>> Arrêt de la stack...$(RESET)"
+	docker compose --profile airflow down
+	@echo "$(GREEN)[OK] Stack arrêtée$(RESET)"
+
+restart: stop start ## Redémarre toute la stack (stop + start)
 
 # ==============================================================================
 # Airflow — Orchestration des DAGs

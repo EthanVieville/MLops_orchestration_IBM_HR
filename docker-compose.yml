@@ -82,6 +82,7 @@ services:
       - ./data:/app/data:ro              # dataset IBM HR pour l'onglet Exploration
     environment:
       API_URL: http://api:8000
+      AIRFLOW_URL: http://airflow:8080
       MLFLOW_TRACKING_URI: sqlite:////app/mlruns/mlruns.db
       MLFLOW_EXPERIMENT: ibm-hr-attrition
     depends_on:

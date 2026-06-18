@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,9 +36,11 @@ st.set_page_config(
 )
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-DEFAULT_API_URL    = os.getenv("API_URL",             "http://127.0.0.1:8000")
-DEFAULT_MLF_URI    = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
-DEFAULT_EXPERIMENT = os.getenv("MLFLOW_EXPERIMENT",   "ibm-hr-attrition")
+DEFAULT_API_URL      = os.getenv("API_URL",             "http://127.0.0.1:8000")
+DEFAULT_MLF_URI      = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
+DEFAULT_EXPERIMENT   = os.getenv("MLFLOW_EXPERIMENT",   "ibm-hr-attrition")
+DEFAULT_AIRFLOW_URL  = os.getenv("AIRFLOW_URL",         "http://airflow:8080")
+QUALITY_THRESHOLD    = float(os.getenv("QUALITY_THRESHOLD", "0.35"))
 
 NUMERIC_FEATURES = [
     "Age", "DailyRate", "DistanceFromHome", "Education",
@@ -65,7 +68,11 @@ CATEGORICAL_OPTIONS: dict[str, list[str]] = {
 }
 
 # ── Session state defaults ────────────────────────────────────────────────────
-for key, default in [("api_url", DEFAULT_API_URL), ("mlf_uri", DEFAULT_MLF_URI)]:
+for key, default in [
+    ("api_url",     DEFAULT_API_URL),
+    ("mlf_uri",     DEFAULT_MLF_URI),
+    ("airflow_url", DEFAULT_AIRFLOW_URL),
+]:
     if key not in st.session_state:
         st.session_state[key] = default
 
@@ -135,6 +142,72 @@ def mlflow_artifact(tracking_uri: str, run_id: str, artifact_path: str) -> bytes
             return Path(local).read_bytes()
     except Exception:
         return None
+
+
+@st.cache_data(ttl=30)
+def airflow_health(url: str) -> bool:
+    try:
+        r = requests.get(f"{url}/health", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+@st.cache_data(ttl=30)
+def airflow_dag_runs(url: str, dag_id: str, limit: int = 20) -> list[dict]:
+    try:
+        r = requests.get(
+            f"{url}/api/v1/dags/{dag_id}/dagRuns",
+            params={"order_by": "-start_date", "limit": limit},
+            auth=("airflow", "airflow"),
+            timeout=5,
+        )
+        return r.json().get("dag_runs", []) if r.status_code == 200 else []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=30)
+def airflow_xcom(url: str, dag_id: str, dag_run_id: str, task_id: str, key: str) -> Any:
+    import json as _json
+    try:
+        r = requests.get(
+            f"{url}/api/v1/dags/{dag_id}/dagRuns/{dag_run_id}"
+            f"/taskInstances/{task_id}/xcomEntries/{key}",
+            auth=("airflow", "airflow"),
+            timeout=3,
+        )
+        if r.status_code != 200:
+            return None
+        value = r.json().get("value")
+        if isinstance(value, str):
+            try:
+                return _json.loads(value)
+            except Exception:
+                return value
+        return value
+    except Exception:
+        return None
+
+
+def run_duration(start: str, end: str) -> str:
+    if not start or not end:
+        return "–"
+    try:
+        dt_s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        dt_e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        secs = int((dt_e - dt_s).total_seconds())
+        return f"{secs // 60}m {secs % 60}s"
+    except Exception:
+        return "–"
+
+
+def fmt_date(iso: str) -> str:
+    return iso[:16].replace("T", " ") if iso else "–"
+
+
+def state_icon(state: str) -> str:
+    return {"success": "✅", "failed": "❌", "running": "⏳"}.get(state, "⏸️")
 
 
 def risk_gauge(prob: float) -> None:
@@ -238,13 +311,14 @@ with st.sidebar:
 # Tabs
 # ══════════════════════════════════════════════════════════════════════════════
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🏠 Contexte",
     "🔮 Prédiction",
     "📊 Modèles",
     "🖼️ Artefacts",
     "⚗️ Entraînement",
     "🔍 Exploration",
+    "🔄 Orchestration",
 ])
 
 
@@ -1081,3 +1155,198 @@ with tab6:
                     })
             if cat_rows:
                 st.dataframe(pd.DataFrame(cat_rows), use_container_width=True, hide_index=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — Orchestration Airflow
+# ══════════════════════════════════════════════════════════════════════════════
+with tab7:
+    st.title("🔄 Orchestration Airflow")
+
+    af_url = st.text_input(
+        "🔗 URL Airflow",
+        value=st.session_state.airflow_url,
+        key="airflow_url_input",
+    )
+    st.session_state.airflow_url = af_url
+
+    af_ok = airflow_health(af_url)
+
+    if af_ok:
+        st.success(f"Airflow ✅ connecté sur `{af_url}`")
+    else:
+        st.error(f"Airflow ❌ inaccessible — lancez `make airflow` ou `make airflow-stack`")
+        st.code(
+            "make airflow          # Airflow seul (port 8080)\n"
+            "make airflow-stack    # Stack complète : API + Airflow + Streamlit",
+            language="bash",
+        )
+
+    st.divider()
+
+    # ── Statut des deux DAGs ──────────────────────────────────────────────────
+    c1, c2 = st.columns(2)
+
+    def _dag_status_card(col, dag_id: str, label: str, schedule: str) -> None:
+        with col:
+            st.markdown(f"### {label}")
+            st.caption(f"Schedule : `{schedule}`")
+            if not af_ok:
+                st.warning("Airflow non disponible")
+                return
+            runs = airflow_dag_runs(af_url, dag_id, limit=1)
+            if not runs:
+                st.info("Aucun run enregistré")
+                return
+            last = runs[0]
+            state = last.get("state", "?")
+            st.metric("Dernier run", f"{state_icon(state)} {state}")
+            st.caption(f"Démarré : {fmt_date(last.get('start_date', ''))}")
+            if last.get("end_date"):
+                st.caption(f"Durée : {run_duration(last.get('start_date',''), last.get('end_date',''))}")
+
+    _dag_status_card(c1, "model_retraining",  "🔁 model_retraining",  "0 */5 * * *")
+    _dag_status_card(c2, "daily_predictions", "📨 daily_predictions", "30 */5 * * *")
+
+    if not af_ok:
+        st.stop()
+
+    st.divider()
+
+    # ── Historique des réentraînements ────────────────────────────────────────
+    st.subheader("🔁 Historique des réentraînements")
+
+    retrain_runs = airflow_dag_runs(af_url, "model_retraining", limit=20)
+
+    if retrain_runs:
+        n_ok  = sum(1 for r in retrain_runs if r.get("state") == "success")
+        n_err = sum(1 for r in retrain_runs if r.get("state") == "failed")
+        n_run = sum(1 for r in retrain_runs if r.get("state") == "running")
+
+        rm1, rm2, rm3, rm4 = st.columns(4)
+        rm1.metric("Runs totaux", len(retrain_runs))
+        rm2.metric("✅ Succès",   n_ok)
+        rm3.metric("❌ Échecs",   n_err)
+        rm4.metric("⏳ En cours", n_run)
+
+        retrain_rows = [
+            {
+                "État":    state_icon(r.get("state", "")),
+                "Statut":  r.get("state", "?"),
+                "Démarré": fmt_date(r.get("start_date", "")),
+                "Durée":   run_duration(r.get("start_date", ""), r.get("end_date", "")),
+                "Run ID":  r.get("dag_run_id", "?")[-22:],
+            }
+            for r in retrain_runs
+        ]
+        st.dataframe(pd.DataFrame(retrain_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucun run pour model_retraining — déclenchez `make airflow-trigger`.")
+
+    # ── Évolution F1 via MLflow ───────────────────────────────────────────────
+    st.subheader("📈 Évolution du F1 (MLflow)")
+
+    with st.spinner("Chargement des métriques MLflow…"):
+        df_mlf7 = mlflow_runs(mlf_uri, mlf_exp)
+
+    if not df_mlf7.empty:
+        f1_col  = next((c for c in ["metrics.f1", "metrics.test_f1"]      if c in df_mlf7.columns), None)
+        auc_col = next((c for c in ["metrics.roc_auc","metrics.test_roc_auc"] if c in df_mlf7.columns), None)
+
+        if f1_col:
+            df_tl = df_mlf7[["start_time", f1_col] + ([auc_col] if auc_col else [])].dropna(subset=[f1_col]).copy()
+            df_tl = df_tl.sort_values("start_time")
+            df_tl["start_time"] = pd.to_datetime(df_tl["start_time"])
+
+            if len(df_tl) >= 2:
+                fig, ax = plt.subplots(figsize=(12, 4))
+                ax.plot(df_tl["start_time"], df_tl[f1_col],
+                        marker="o", color="#3498db", linewidth=2, label="F1")
+                if auc_col and auc_col in df_tl.columns:
+                    ax.plot(df_tl["start_time"], df_tl[auc_col],
+                            marker="s", color="#2ecc71", linewidth=2, linestyle="--", label="ROC-AUC")
+                ax.axhline(QUALITY_THRESHOLD, color="#e74c3c", linestyle=":", linewidth=1.5,
+                           label=f"Seuil qualité ({QUALITY_THRESHOLD})")
+                ax.set_ylabel("Score")
+                ax.set_title("Métriques des réentraînements automatiques dans le temps")
+                ax.legend()
+                ax.grid(alpha=0.3)
+                plt.xticks(rotation=30, ha="right")
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close(fig)
+            else:
+                st.info("Minimum 2 runs nécessaires pour tracer la courbe.")
+        else:
+            st.info("Aucune métrique F1 trouvée dans MLflow.")
+    else:
+        st.info("Aucun run MLflow disponible.")
+
+    st.divider()
+
+    # ── Historique des prédictions ────────────────────────────────────────────
+    st.subheader("📨 Historique des prédictions automatiques")
+
+    pred_runs = airflow_dag_runs(af_url, "daily_predictions", limit=20)
+
+    if pred_runs:
+        pred_rows = []
+        for run in pred_runs:
+            state  = run.get("state", "?")
+            run_id = run.get("dag_run_id", "")
+
+            n_pred = n_attr = rate_val = None
+            if state == "success" and run_id:
+                n_pred   = airflow_xcom(af_url, "daily_predictions", run_id, "send_predictions", "n_predictions")
+                n_attr   = airflow_xcom(af_url, "daily_predictions", run_id, "send_predictions", "n_attrition")
+                rate_val = airflow_xcom(af_url, "daily_predictions", run_id, "send_predictions", "attrition_rate")
+
+            pred_rows.append({
+                "État":         state_icon(state),
+                "Statut":       state,
+                "Démarré":      fmt_date(run.get("start_date", "")),
+                "Durée":        run_duration(run.get("start_date", ""), run.get("end_date", "")),
+                "Prédictions":  n_pred  if n_pred  is not None else "–",
+                "Attrition":    n_attr  if n_attr  is not None else "–",
+                "Taux":         f"{float(rate_val):.1%}" if rate_val is not None else "–",
+            })
+
+        n_ok_p = sum(1 for r in pred_runs if r.get("state") == "success")
+        pm1, pm2, pm3 = st.columns(3)
+        pm1.metric("Runs totaux",  len(pred_runs))
+        pm2.metric("✅ Succès",    n_ok_p)
+        pm3.metric("❌ Échecs",    len(pred_runs) - n_ok_p)
+
+        st.dataframe(pd.DataFrame(pred_rows), use_container_width=True, hide_index=True)
+
+        # ── Courbe du taux d'attrition ────────────────────────────────────────
+        rate_points = [
+            (r["Démarré"], float(r["Taux"].replace("%", "")) / 100)
+            for r in pred_rows
+            if r["Taux"] != "–"
+        ]
+
+        if len(rate_points) >= 2:
+            st.subheader("📊 Taux d'attrition prédit dans le temps")
+            dates_r, rates_r = zip(*sorted(rate_points))
+            pct = [v * 100 for v in rates_r]
+            x   = range(len(dates_r))
+
+            fig, ax = plt.subplots(figsize=(12, 4))
+            ax.plot(x, pct, marker="o", color="#e74c3c", linewidth=2)
+            ax.fill_between(x, pct, alpha=0.12, color="#e74c3c")
+            ax.axhline(30, color="#f39c12", linestyle="--", linewidth=1.5, label="Seuil alerte 30 %")
+            ax.set_xticks(list(x))
+            ax.set_xticklabels(dates_r, rotation=30, ha="right", fontsize=9)
+            ax.set_ylabel("Taux d'attrition prédit (%)")
+            ax.set_title("Évolution du taux d'attrition par run de prédictions")
+            ax.legend()
+            ax.grid(alpha=0.3)
+            plt.tight_layout()
+            st.pyplot(fig, use_container_width=True)
+            plt.close(fig)
+    else:
+        st.info("Aucun run pour daily_predictions.")
+
+    st.divider()
+    st.caption("Données Airflow rechargées toutes les 30 s · auth : airflow / airflow · MLflow rafraîchi toutes les 60 s")
