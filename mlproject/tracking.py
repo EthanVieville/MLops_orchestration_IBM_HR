@@ -115,10 +115,16 @@ _SKOPS_TRUSTED = [
 def log_model(pipeline, name: str = "model") -> None:
     """Log un pipeline scikit-learn comme artefact MLflow.
 
-    Le modèle est rechargeable via :
-        mlflow.sklearn.load_model(f"runs:/{run_id}/{name}")
+    Essaie d'abord skops (natif MLflow), bascule sur cloudpickle si le modèle
+    contient des types non supportés (LightGBM OrderedDict, PyTorch custom class…).
     """
-    mlflow.sklearn.log_model(pipeline, name=name, skops_trusted_types=_SKOPS_TRUSTED)
+    try:
+        mlflow.sklearn.log_model(pipeline, name=name, skops_trusted_types=_SKOPS_TRUSTED)
+    except Exception:
+        mlflow.sklearn.log_model(
+            pipeline, name=name,
+            serialization_format=mlflow.sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE,
+        )
 
 
 def log_confusion_matrix(y_true, y_pred) -> None:
