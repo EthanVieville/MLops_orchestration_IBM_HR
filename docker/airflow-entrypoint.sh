@@ -5,9 +5,10 @@ set -e
 
 echo "[Airflow] Correction des permissions des volumes..."
 mkdir -p /opt/airflow/logs /opt/airflow/project/data \
-         /opt/airflow/project/models /opt/airflow/project/mlruns
-chown -R 50000:0 /opt/airflow/logs /opt/airflow/project/mlruns 2>/dev/null || true
-chmod -R 775     /opt/airflow/logs /opt/airflow/project/mlruns 2>/dev/null || true
+         /opt/airflow/project/models /opt/airflow/project/mlruns \
+         /app/mlruns
+chown -R 50000:0 /opt/airflow/logs /opt/airflow/project/mlruns /app/mlruns 2>/dev/null || true
+chmod -R 775     /opt/airflow/logs /opt/airflow/project/mlruns /app/mlruns 2>/dev/null || true
 
 echo "[Airflow] Démarrage en tant qu'utilisateur airflow..."
 exec su -s /bin/bash airflow -c '

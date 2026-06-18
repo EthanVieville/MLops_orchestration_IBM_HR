@@ -105,7 +105,8 @@ services:
       - ./tests:/opt/airflow/project/tests                     # generate_synthetic_data.py
       - ./data:/opt/airflow/project/data                       # dataset (writable pour prepare_data)
       - model_vol:/opt/airflow/project/models                  # modèles partagés avec api
-      - mlruns_vol:/opt/airflow/project/mlruns                 # MLflow runs partagés
+      - mlruns_vol:/opt/airflow/project/mlruns                 # MLflow runs partagés (tracking URI)
+      - mlruns_vol:/app/mlruns                                 # même volume, chemin artifact_location du trainer
       - airflow_logs:/opt/airflow/logs                         # logs + DB SQLite persistants entre redémarrages
     environment:
       # ── Airflow core ───────────────────────────────────────────────────────
